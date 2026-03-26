@@ -1,0 +1,2 @@
+streamlit
+language-tool-python
