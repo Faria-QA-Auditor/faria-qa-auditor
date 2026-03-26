@@ -3,26 +3,25 @@ import language_tool_python
 import re
 from langdetect import detect, DetectorFactory
 
-# Para que los resultados sean consistentes
+# Estabilidad para la detección
 DetectorFactory.seed = 0
 
-# Configuración de página
-st.set_page_config(page_title="Faria Global QA Auditor", page_icon="🌍")
+st.set_page_config(page_title="Faria Global QA", page_icon="🌍")
 
-# Diccionario de motores para ahorrar memoria
 @st.cache_resource
-def get_tool(lang_code):
+def get_tool(lang):
+    # Intentamos cargar el idioma específico, si falla usamos inglés
     try:
-        return language_tool_python.LanguageTool(lang_code)
+        return language_tool_python.LanguageTool(lang)
     except:
-        return language_tool_python.LanguageTool('en-US') # Fallback a inglés si falla
+        return language_tool_python.LanguageTool('en-US')
 
-st.title("🌍 Faria Universal Standards Auditor")
-st.write("Revisión automática de formato y ortografía en cualquier idioma.")
+st.title("🌍 Faria Universal QA Auditor")
+st.write("Auditoría multilingüe a prueba de errores.")
 
-texto_input = st.text_area("Pega tus estándares aquí (En/Es/Ca/Fr/De...):", height=300)
+texto_input = st.text_area("Pega tus estándares aquí:", height=300)
 
-if st.button("🚀 Iniciar Auditoría Maestra"):
+if st.button("🚀 Iniciar Auditoría"):
     if texto_input:
         lineas = texto_input.strip().split('\n')
         progreso = st.progress(0)
@@ -31,45 +30,45 @@ if st.button("🚀 Iniciar Auditoría Maestra"):
             linea = linea.strip()
             if not linea: continue
             
-            # 1. DETECCIÓN AUTOMÁTICA DE IDIOMA
-            try:
-                codigo_iso = detect(linea) # Detecta 'es', 'en', 'ca', etc.
-                # Ajuste para catalán/valenciano que usa LanguageTool
-                if codigo_iso == 'ca': motor_lang = 'ca-ES'
-                elif codigo_iso == 'es': motor_lang = 'es'
-                else: motor_lang = 'en-US'
-            except:
-                motor_lang = 'en-US'
-
-            tool = get_tool(motor_lang)
             errores = []
             
-            # 2. REGLAS DE FORMATO FARIA (Universales)
+            # 1. Detección de idioma segura
+            try:
+                lang_code = detect(linea)
+                # Ajuste para catalán
+                actual_lang = 'ca-ES' if lang_code == 'ca' else lang_code
+            except:
+                lang_code = "unknown"
+                actual_lang = 'en-US'
+
+            # 2. Validación de Formato (Faria Rules)
             if not re.match(r'^([A-Z]|[0-9])', linea): 
-                errores.append("❌ Error de inicio: Debe empezar con Mayúscula o Número.")
+                errores.append("❌ Debe empezar con Mayúscula o Número.")
             if not linea.endswith('.'): 
                 errores.append("❌ Falta punto final.")
-            if "  " in linea:
-                errores.append("⚠️ Espacios dobles detectados.")
 
-            # 3. REVISIÓN LINGÜÍSTICA
-            matches = tool.check(linea)
-            for m in matches:
-                rid = getattr(m, 'ruleId', '')
-                # Ignorar errores de mayúscula inicial (ya los validamos arriba)
-                if rid not in ['UPPERCASE_SENTENCE_START', 'LC_AFTER_PERIOD']:
-                    errores.append(f"⚠️ ({codigo_iso.upper()}) {m.message} -> '{linea[m.offset:m.offset+m.errorLength]}'")
+            # 3. Validación Gramatical Protegida
+            try:
+                tool = get_tool(actual_lang)
+                matches = tool.check(linea)
+                for m in matches:
+                    # Usamos getattr para evitar el error de la pantalla roja
+                    rule_id = getattr(m, 'ruleId', '')
+                    if rule_id not in ['UPPERCASE_SENTENCE_START', 'LC_AFTER_PERIOD']:
+                        msg = getattr(m, 'message', 'Error gramatical')
+                        errores.append(f"⚠️ ({lang_code.upper()}) {msg}")
+            except Exception as e:
+                errores.append(f"ℹ️ Nota: No se pudo completar la revisión gramatical en esta línea.")
 
-            # 4. MOSTRAR RESULTADOS
+            # 4. Mostrar Resultados
             if not errores:
-                st.success(f"Línea {i} [OK - {codigo_iso.upper()}]: {linea[:50]}...")
+                st.success(f"Línea {i} OK: {linea[:50]}...")
             else:
-                with st.expander(f"Línea {i}: Errores encontrados ({codigo_iso.upper()})", expanded=True):
+                with st.expander(f"Línea {i}: Revisar ({lang_code.upper()})", expanded=True):
                     st.write(f"**Texto:** {linea}")
-                    for e in errores:
-                        st.write(e)
+                    for err in errores:
+                        st.write(err)
             
             progreso.progress(i / len(lineas))
-            
     else:
-        st.warning("El cuadro está vacío.")
+        st.warning("Pega el texto antes de iniciar.")
