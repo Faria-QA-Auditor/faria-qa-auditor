@@ -5,7 +5,7 @@ import re
 # 1. CONFIGURACIÓN DE LA PÁGINA
 st.set_page_config(page_title="English QA Auditor", page_icon="🇺🇸", layout="centered")
 
-# --- CSS PERSONALIZADO (Estilo Faria, Botones Morados) ---
+# --- CSS PERSONALIZADO ---
 st.markdown("""
     <style>
     .stButton>button {
@@ -22,7 +22,6 @@ st.markdown("""
         background-color: #ff4081;
         color: white;
     }
-    /* Estilo para las alertas de error (Rojo Faria) */
     .stAlert {
         border-radius: 10px;
     }
@@ -32,20 +31,19 @@ st.markdown("""
 # 2. HEADER
 st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
 st.markdown("<h1 style='color: #4a148c;'>🇺🇸 English Standards Auditor</h1>", unsafe_allow_html=True)
-st.markdown("<p style='color: #666;'>Locked to English (US, UK, AU) with strict formatting rules.</p>", unsafe_allow_html=True)
+st.markdown("<p style='color: #666;'>Strict Format: Caps/Numbers, No Extra Spaces, Multi-Dialect English.</p>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
 st.write("---")
 
 # 3. ENTRADA DE TEXTO
-texto_input = st.text_area("Paste English standards here (one per line):", height=300, placeholder="e.g.\n2.1. Verify user credentials.\nEnsure data integrity.")
+texto_input = st.text_area("Paste English standards here (one per line):", height=300, placeholder="e.g.\n1. First standard.\n2.1. Second standard.")
 
 # 4. BOTÓN DE ACCIÓN
 if st.button("🚀 Run Specialized Audit"):
     if not texto_input.strip():
         st.warning("⚠️ Please paste some text first.")
     else:
-        # Procesar línea por línea
         lineas = [l.strip() for l in texto_input.split('\n') if l.strip()]
         
         st.subheader("Audit Results")
@@ -55,15 +53,22 @@ if st.button("🚀 Run Specialized Audit"):
         for i, linea in enumerate(lineas, 1):
             errores_linea = []
             
-            # --- CONTADOR DE PALABRAS ---
-            word_count = len(linea.split())
+            # --- CONTADOR DE PALABRAS (Lógica robusta) ---
+            words = linea.split()
+            word_count = len(words)
             
-            # --- REGLA 1 y 2: Formato de Inicio (Mayúscula o Numero.Numero.) ---
-            patron_inicio = r'^([A-Z]|\d+\.\d+\.)'
+            # --- REGLA 1 y 2: Formato de Inicio (Mayúscula o Numero. o Numero.Numero.) ---
+            # Explicación del Regex:
+            # ^([A-Z] -> Empieza con Mayúscula
+            # | -> O
+            # \d+\. -> Numero seguido de punto (ej. 1.)
+            # (\d+\.)? -> Opcionalmente otro numero seguido de punto (ej. 2.1.)
+            patron_inicio = r'^([A-Z]|\d+\.(\d+\.)?)'
+            
             if not re.match(patron_inicio, linea):
                 errores_linea.append({
-                    'message': "Does not start with a capital letter or 'number.number.' format (e.g., 2.1.).",
-                    'suggestions': [{"value": f"Make it '{linea[0].upper()}{linea[1:]}' or add 'X.X.' prefix."}]
+                    'message': "Does not start with a capital letter or valid number format (e.g., '1.' or '2.1.').",
+                    'suggestions': [{"value": f"Check start of: '{linea[:10]}...'"}]
                 })
 
             # --- REGLA 3: Espacios Extra ---
@@ -74,7 +79,7 @@ if st.button("🚀 Run Specialized Audit"):
                     'suggestions': [{"value": linea_corregida}]
                 })
 
-            # --- REGLA 4 y 5: Ortografía y Punctuation ---
+            # --- REGLA 4 y 5: Ortografía y Puntuación (Múltiples variantes) ---
             try:
                 res = requests.post('https://api.languagetool.org/v2/check', 
                                     data={'text': linea, 
@@ -89,23 +94,13 @@ if st.button("🚀 Run Specialized Audit"):
                         'suggestions': m['replacements'][:2]
                     })
             except Exception as e:
-                errores_linea.append({'message': f"Error calling spellcheck API: {str(e)}", 'suggestions': []})
+                errores_linea.append({'message': f"API Error: {str(e)}", 'suggestions': []})
 
-            # --- MOSTRAR RESULTADOS DE LA LÍNEA ---
-            header_text = f"Line {i} ({word_count} words)"
+            # --- MOSTRAR RESULTADOS ---
+            # El contador de palabras aparece ahora justo después del número de línea
+            header_label = f"Line {i} | {word_count} words"
             
             if not errores_linea:
-                st.success(f"{header_text}: ✅ Perfect")
+                st.success(f"{header_label} ✅ Perfect")
             else:
-                with st.expander(f"{header_text}: ⚠️ {len(errores_linea)} issues found", expanded=True):
-                    st.write(f"**Original:** {linea}")
-                    for error in errores_linea:
-                        st.error(f"- {error['message']}")
-                        
-                        if error['suggestions']:
-                            suggs = ", ".join([f"`{s['value']}`" for s in error['suggestions']])
-                            st.info(f"💡 Suggestion: {suggs}")
-                    st.write("---")
-
-st.write("---")
-st.caption("Standards & Services Team | Faria Education Group")
+                with st.expander(f"{header
