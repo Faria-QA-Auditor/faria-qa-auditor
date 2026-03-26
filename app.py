@@ -4,6 +4,7 @@ import re
 from langdetect import detect, DetectorFactory
 import gc
 
+# Estabilidad para detección de idiomas
 DetectorFactory.seed = 0
 
 st.set_page_config(page_title="Faria Global QA Auditor", page_icon="🛡️")
@@ -14,7 +15,7 @@ def get_tool(lang):
     mapping = {'en': 'en-US', 'es': 'es', 'fr': 'fr', 'de': 'de', 'it': 'it', 'pt': 'pt'}
     target_lang = mapping.get(lang, 'en-US')
     try:
-        # Quitamos el motherTag para que detecte bien los typos en su idioma original
+        # Cargamos el motor en el idioma original para máxima sensibilidad
         return language_tool_python.LanguageTool(target_lang)
     except:
         return language_tool_python.LanguageTool('en-US')
@@ -49,40 +50,42 @@ if st.button("🚀 Run Audit"):
             for i, linea in enumerate(lineas, 1):
                 line_errors = []
                 
+                # 1. Detect Language
                 try:
                     lang_code = detect(linea)
                 except:
                     lang_code = "en"
 
-                # 1. Format Rules (English)
+                # 2. MANDATORY FORMAT RULES (English Alerts)
+                # Check for Uppercase or Number at start
                 if not re.match(r'^([A-Z]|[0-9])', linea): 
-                    line_errors.append("❌ Must start with Uppercase or Number.")
-                if not linea.endswith('.'): 
-                    line_errors.append("❌ Missing period at the end.")
+                    line_errors.append("❌ Format: Must start with an Uppercase letter or a Number.")
+                
+                # Check for double spaces
                 if "  " in linea:
-                    line_errors.append("⚠️ Double spaces detected.")
+                    line_errors.append("⚠️ Format: Double spaces detected.")
 
-                # 2. Spelling & Grammar (Translating alerts to English)
+                # 3. SPELLING & GRAMMAR (Strict Detection + English Labels)
                 try:
                     tool = get_tool(lang_code)
                     matches = tool.check(linea)
                     for m in matches:
-                        if m.ruleId not in ['UPPERCASE_SENTENCE_START', 'LC_AFTER_PERIOD', 'WHITESPACE_RULE']:
-                            # Traducimos los mensajes más comunes manualmente para que siempre sea en inglés
-                            msg = m.message
-                            if "ortografía" in msg.lower() or "spelling" in msg.lower() or "faute" in msg.lower():
-                                msg = "Possible spelling mistake found."
-                            elif "gramática" in msg.lower() or "grammar" in msg.lower():
-                                msg = "Grammatical issue detected."
+                        # Ignoramos reglas de puntuación final y minúsculas al inicio (ya que las manejamos arriba)
+                        if m.ruleId not in ['UPPERCASE_SENTENCE_START', 'LC_AFTER_PERIOD', 'WHITESPACE_RULE', 'MORFOLOGIK_RULE_EN_US']:
+                            
+                            # Si es un error ortográfico (Spelling)
+                            if m.category == 'TYPOS' or 'ortografía' in m.message.lower() or 'spelling' in m.message.lower():
+                                reason = "Spelling mistake"
                             else:
-                                # Si no sabemos qué es, al menos damos una alerta genérica en inglés
-                                msg = f"Issue detected: {m.ruleId}"
-                                
-                            line_errors.append(f"⚠️ **({lang_code.upper()})** {msg} (Suggested: {', '.join(m.replacements[:2])})")
+                                reason = "Grammar/Style issue"
+                            
+                            # Construimos la alerta SIEMPRE en inglés
+                            suggestion = f" (Suggested: {', '.join(m.replacements[:2])})" if m.replacements else ""
+                            line_errors.append(f"⚠️ **({lang_code.upper()})** {reason}: {m.message}{suggestion}")
                 except:
                     pass
 
-                # 3. Display
+                # 4. Display Results (Open View)
                 if line_errors:
                     error_count += 1
                     st.markdown(f"**Line {i}:** {linea}")
