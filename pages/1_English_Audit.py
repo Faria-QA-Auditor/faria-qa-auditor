@@ -31,13 +31,13 @@ st.markdown("""
 # 2. HEADER
 st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
 st.markdown("<h1 style='color: #4a148c;'>🇺🇸 English Standards Auditor</h1>", unsafe_allow_html=True)
-st.markdown("<p style='color: #666;'>Strict Format: Caps/Numbers, No Extra Spaces, Multi-Dialect English.</p>", unsafe_allow_html=True)
+st.markdown("<p style='color: #666;'>Strict Format: Caps/Numbers, No Extra Spaces, Broken Words, Multi-Dialect.</p>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
 st.write("---")
 
 # 3. ENTRADA DE TEXTO
-texto_input = st.text_area("Paste English standards here (one per line):", height=300, placeholder="e.g.\n1. First standard.\n2.1. Second standard.")
+texto_input = st.text_area("Paste English standards here (one per line):", height=300, placeholder="e.g.\n1. First standard.\n2.1. Incomplete- standard.")
 
 # 4. BOTÓN DE ACCIÓN
 if st.button("🚀 Run Specialized Audit"):
@@ -53,22 +53,16 @@ if st.button("🚀 Run Specialized Audit"):
         for i, linea in enumerate(lineas, 1):
             errores_linea = []
             
-            # --- CONTADOR DE PALABRAS (Lógica robusta) ---
+            # --- CONTADOR DE PALABRAS ---
             words = linea.split()
             word_count = len(words)
             
             # --- REGLA 1 y 2: Formato de Inicio (Mayúscula o Numero. o Numero.Numero.) ---
-            # Explicación del Regex:
-            # ^([A-Z] -> Empieza con Mayúscula
-            # | -> O
-            # \d+\. -> Numero seguido de punto (ej. 1.)
-            # (\d+\.)? -> Opcionalmente otro numero seguido de punto (ej. 2.1.)
             patron_inicio = r'^([A-Z]|\d+\.(\d+\.)?)'
-            
             if not re.match(patron_inicio, linea):
                 errores_linea.append({
                     'message': "Does not start with a capital letter or valid number format (e.g., '1.' or '2.1.').",
-                    'suggestions': [{"value": f"Check start of: '{linea[:10]}...'"}]
+                    'suggestions': [{"value": f"Fix start: {linea[:5]}..."}]
                 })
 
             # --- REGLA 3: Espacios Extra ---
@@ -77,6 +71,15 @@ if st.button("🚀 Run Specialized Audit"):
                 errores_linea.append({
                     'message': "Contains extra spaces between words.",
                     'suggestions': [{"value": linea_corregida}]
+                })
+
+            # --- NUEVA REGLA: Palabras cortadas (ej. "word-") ---
+            # Busca cualquier palabra que termine en guion o guion bajo
+            broken_words = re.findall(r'\b\w+[-_]\b|\b\w+[-_]\s', linea)
+            if broken_words:
+                errores_linea.append({
+                    'message': f"Detected potentially broken or hyphenated words: {', '.join(broken_words)}",
+                    'suggestions': [{"value": "Remove the trailing hyphen or join the word fragments."}]
                 })
 
             # --- REGLA 4 y 5: Ortografía y Puntuación (Múltiples variantes) ---
@@ -88,19 +91,4 @@ if st.button("🚀 Run Specialized Audit"):
                                          }).json()
                 
                 for m in res.get('matches', []):
-                    clean_message = m['message'].replace("Check for", "Verify").replace("Did you mean", "Consider using")
-                    errores_linea.append({
-                        'message': f"Grammar/Spelling: {clean_message}",
-                        'suggestions': m['replacements'][:2]
-                    })
-            except Exception as e:
-                errores_linea.append({'message': f"API Error: {str(e)}", 'suggestions': []})
-
-            # --- MOSTRAR RESULTADOS ---
-            # El contador de palabras aparece ahora justo después del número de línea
-            header_label = f"Line {i} | {word_count} words"
-            
-            if not errores_linea:
-                st.success(f"{header_label} ✅ Perfect")
-            else:
-                with st.expander(f"{header
+                    clean_message = m['message'].replace("Check for", "Verify").replace
