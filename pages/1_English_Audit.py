@@ -55,8 +55,10 @@ if st.button("🚀 Run Specialized Audit"):
         for i, linea in enumerate(lineas, 1):
             errores_linea = []
             
+            # --- CONTADOR DE PALABRAS ---
+            word_count = len(linea.split())
+            
             # --- REGLA 1 y 2: Formato de Inicio (Mayúscula o Numero.Numero.) ---
-            # Expresión regular: ^(comienzo) ( Mayúscula O (Numero . Numero .) )
             patron_inicio = r'^([A-Z]|\d+\.\d+\.)'
             if not re.match(patron_inicio, linea):
                 errores_linea.append({
@@ -65,7 +67,6 @@ if st.button("🚀 Run Specialized Audit"):
                 })
 
             # --- REGLA 3: Espacios Extra ---
-            # Buscamos dos o más espacios seguidos
             if re.search(r' {2,}', linea):
                 linea_corregida = re.sub(r' {2,}', ' ', linea)
                 errores_linea.append({
@@ -73,37 +74,34 @@ if st.button("🚀 Run Specialized Audit"):
                     'suggestions': [{"value": linea_corregida}]
                 })
 
-            # --- REGLA 4 y 5: Ortografía y Punctuation (Múltiples variantes) ---
-            # Llamamos a LanguageTool para el resto. Forzamos 'en' (genérico) 
-            # pero le pedimos que respete las 3 variantes principales en la motherTag.
+            # --- REGLA 4 y 5: Ortografía y Punctuation ---
             try:
                 res = requests.post('https://api.languagetool.org/v2/check', 
                                     data={'text': linea, 
-                                          'language': 'en', # Idioma base
-                                          'motherTag': 'en-US,en-GB,en-AU' # Acepta estas 3 variantes
+                                          'language': 'en',
+                                          'motherTag': 'en-US,en-GB,en-AU'
                                          }).json()
                 
-                # Filtrar y formatear los errores de LT para que coincidan con nuestro formato
                 for m in res.get('matches', []):
-                    # Simplificamos los mensajes de la API para que sean claros
                     clean_message = m['message'].replace("Check for", "Verify").replace("Did you mean", "Consider using")
                     errores_linea.append({
                         'message': f"Grammar/Spelling: {clean_message}",
-                        'suggestions': m['replacements'][:2] # Tomamos las primeras 2 sugerencias
+                        'suggestions': m['replacements'][:2]
                     })
             except Exception as e:
                 errores_linea.append({'message': f"Error calling spellcheck API: {str(e)}", 'suggestions': []})
 
             # --- MOSTRAR RESULTADOS DE LA LÍNEA ---
+            header_text = f"Line {i} ({word_count} words)"
+            
             if not errores_linea:
-                st.success(f"Line {i}: ✅ Perfect")
+                st.success(f"{header_text}: ✅ Perfect")
             else:
-                with st.expander(f"Line {i}: ⚠️ {len(errores_linea)} issues found", expanded=True):
+                with st.expander(f"{header_text}: ⚠️ {len(errores_linea)} issues found", expanded=True):
                     st.write(f"**Original:** {linea}")
                     for error in errores_linea:
                         st.error(f"- {error['message']}")
                         
-                        # Mostrar sugerencias si existen
                         if error['suggestions']:
                             suggs = ", ".join([f"`{s['value']}`" for s in error['suggestions']])
                             st.info(f"💡 Suggestion: {suggs}")
