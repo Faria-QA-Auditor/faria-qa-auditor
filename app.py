@@ -1,15 +1,14 @@
 import streamlit as st
 import language_tool_python
 import re
+import pandas as pd
 from langdetect import detect, DetectorFactory
 
 # Stability for language detection
 DetectorFactory.seed = 0
 
-# Page configuration
 st.set_page_config(page_title="Faria Global QA Auditor", page_icon="🛡️")
 
-# Caching for language tools to save memory
 @st.cache_resource
 def get_tool(lang):
     try:
@@ -17,88 +16,101 @@ def get_tool(lang):
     except:
         return language_tool_python.LanguageTool('en-US')
 
-# --- Header Section with your Uploaded JPG Logo ---
-# Usamos un diseño de columnas para centrar el logo
+# --- Header Section ---
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
-    # Mostramos el archivo local 'logo.jpg' que subiste a GitHub
     try:
-        st.image("logo.jpg", width=300, caption="Faria Education Group")
+        st.image("logo.jpg", width=300)
     except:
-        # Salvavidas por si GitHub tarda en reflejar la subida de la imagen
-        st.write("Faria Global QA Auditor")
+        st.markdown("<h1 style='text-align: center; color: #FF4B4B;'>FARIA</h1>", unsafe_allow_html=True)
 
-st.markdown("<h2 style='text-align: center;'>Global Standards QA Auditor</h2>", unsafe_allow_html=True)
-st.write("---") # Visual separator
-
-st.write("Automated format and grammar audit for curriculum standards in any language.")
+st.markdown("<h3 style='text-align: center;'>Global Standards QA Auditor</h3>", unsafe_allow_html=True)
+st.write("---")
 
 # --- Input Section ---
-texto_input = st.text_area("Paste your standards here (one per line):", height=300, 
-                          placeholder="Example:\n1.1. Analyzing historical data.\n1.2. Analizar datos históricos.")
+texto_input = st.text_area("Paste your standards here (Max 1,000 lines):", height=300)
 
-# --- Process Button ---
-if st.button("🚀 Start Global Audit"):
+if st.button("🚀 Run Audit"):
     if texto_input:
-        lineas = texto_input.strip().split('\n')
+        lineas = [l.strip() for l in texto_input.strip().split('\n') if l.strip()]
+        total = len(lineas)
         
-        # Progress bar
-        progress_bar = st.progress(0)
-        status_info = st.empty()
-        
-        status_info.info(f"Auditing {len(lineas)} lines... Please wait.")
-        
-        for i, linea in enumerate(lineas, 1):
-            linea = linea.strip()
-            if not linea: continue
+        if total > 1000:
+            st.error(f"⚠️ **Batch too large!** Please process a maximum of 1,000 lines (Current: {total}).")
+        else:
+            progress_bar = st.progress(0)
+            status_info = st.empty()
             
-            errors = []
-            
-            # 1. Language Detection
-            try:
-                lang_code = detect(linea)
-                actual_lang = 'ca-ES' if lang_code == 'ca' else lang_code
-            except:
-                lang_code = "unknown"
-                actual_lang = 'en-US'
+            ok_count = 0
+            error_count = 0
+            report_results = [] # <--- Aquí guardaremos todo para el Excel
 
-            # 2. Faria Universal Format Rules
-            # Capital/Number check
-            if not re.match(r'^([A-Z]|[0-9])', linea): 
-                errors.append("❌ Must start with an Uppercase letter or a Number.")
-            # Period check
-            if not linea.endswith('.'): 
-                errors.append("❌ Missing period at the end.")
-            # Double spaces
-            if "  " in linea:
-                errors.append("⚠️ Double spaces detected.")
+            for i, linea in enumerate(lineas, 1):
+                line_errors = []
+                
+                # 1. Language Detection
+                try:
+                    lang_code = detect(linea)
+                    actual_lang = 'ca-ES' if lang_code == 'ca' else lang_code
+                except:
+                    lang_code = "en"
+                    actual_lang = 'en-US'
 
-            # 3. Grammar & Typos (Protected)
-            try:
-                tool = get_tool(actual_lang)
-                matches = tool.check(linea)
-                for m in matches:
-                    rule_id = getattr(m, 'ruleId', '')
-                    if rule_id not in ['UPPERCASE_SENTENCE_START', 'LC_AFTER_PERIOD']:
-                        msg = getattr(m, 'message', 'Grammar/Spelling issue')
-                        errors.append(f"⚠️ ({lang_code.upper()}) {msg}")
-            except Exception:
-                errors.append(f"ℹ️ Note: Grammar check skipped for this line.")
+                # 2. Faria Format Rules
+                if not re.match(r'^([A-Z]|[0-9])', linea): 
+                    line_errors.append("❌ Must start with Uppercase or Number.")
+                if not linea.endswith('.'): 
+                    line_errors.append("❌ Missing period at the end.")
+                if "  " in linea:
+                    line_errors.append("⚠️ Double spaces detected.")
 
-            # 4. Display Results
-            if not errores:
-                st.success(f"Line {i} OK: {linea[:60]}...")
-            else:
-                with st.expander(f"Line {i}: Issues found ({lang_code.upper()})", expanded=True):
-                    st.write(f"**Source:** {linea}")
-                    for err in errores:
-                        st.write(err)
-            
-            # Update progress
-            progress_bar.progress(i / len(lineas))
-            
-        status_info.empty()
-        st.success("🎉 Audit Complete!")
-        st.balloons()
+                # 3. Grammar & Typos
+                try:
+                    tool = get_tool(actual_lang)
+                    matches = tool.check(linea)
+                    for m in matches:
+                        if getattr(m, 'ruleId', '') not in ['UPPERCASE_SENTENCE_START', 'LC_AFTER_PERIOD']:
+                            line_errors.append(f"⚠️ ({lang_code.upper()}) {getattr(m, 'message', 'Typo')}")
+                except:
+                    pass
+
+                # 4. Results Display & Data Collection
+                if not line_errors:
+                    ok_count += 1
+                else:
+                    error_count += 1
+                    # Guardamos para el reporte descargable
+                    report_results.append({
+                        "Line": i,
+                        "Language": lang_code.upper(),
+                        "Standard Text": linea,
+                        "Issues Found": " | ".join(line_errors)
+                    })
+                    
+                    with st.expander(f"Line {i}: Issues Found", expanded=False):
+                        st.write(f"**Text:** {linea}")
+                        for e in line_errors:
+                            st.write(e)
+                
+                progress_bar.progress(i / total)
+                status_info.text(f"Auditing line {i} of {total}...")
+
+            status_info.empty()
+            st.success(f"🎉 Audit Complete! ✅ {ok_count} Passed | ❌ {error_count} Issues found.")
+
+            # --- NUEVO: Botón de Descarga ---
+            if report_results:
+                st.write("---")
+                st.subheader("📊 Export Results")
+                df = pd.DataFrame(report_results)
+                csv = df.to_csv(index=False).encode('utf-8')
+                
+                st.download_button(
+                    label="📥 Download Audit Report (CSV)",
+                    data=csv,
+                    file_name="faria_audit_report.csv",
+                    mime="text/csv",
+                )
+                st.info("The CSV file can be opened directly in Excel for easier tracking.")
     else:
-        st.warning("The input area is empty. Please paste your standards.")
+        st.warning("Please paste some standards first.")
