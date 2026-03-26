@@ -1,7 +1,6 @@
 import streamlit as st
 import language_tool_python
 import re
-import pandas as pd
 from langdetect import detect, DetectorFactory
 
 # Stability for language detection
@@ -9,6 +8,7 @@ DetectorFactory.seed = 0
 
 st.set_page_config(page_title="Faria Global QA Auditor", page_icon="🛡️")
 
+# Caching for language tools
 @st.cache_resource
 def get_tool(lang):
     try:
@@ -20,6 +20,7 @@ def get_tool(lang):
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
     try:
+        # Usa el logo local que subiste a GitHub
         st.image("logo.jpg", width=300)
     except:
         st.markdown("<h1 style='text-align: center; color: #FF4B4B;'>FARIA</h1>", unsafe_allow_html=True)
@@ -43,7 +44,6 @@ if st.button("🚀 Run Audit"):
             
             ok_count = 0
             error_count = 0
-            report_results = [] # <--- Aquí guardaremos todo para el Excel
 
             for i, linea in enumerate(lineas, 1):
                 line_errors = []
@@ -74,19 +74,11 @@ if st.button("🚀 Run Audit"):
                 except:
                     pass
 
-                # 4. Results Display & Data Collection
+                # 4. Results Display
                 if not line_errors:
                     ok_count += 1
                 else:
                     error_count += 1
-                    # Guardamos para el reporte descargable
-                    report_results.append({
-                        "Line": i,
-                        "Language": lang_code.upper(),
-                        "Standard Text": linea,
-                        "Issues Found": " | ".join(line_errors)
-                    })
-                    
                     with st.expander(f"Line {i}: Issues Found", expanded=False):
                         st.write(f"**Text:** {linea}")
                         for e in line_errors:
@@ -97,20 +89,7 @@ if st.button("🚀 Run Audit"):
 
             status_info.empty()
             st.success(f"🎉 Audit Complete! ✅ {ok_count} Passed | ❌ {error_count} Issues found.")
-
-            # --- NUEVO: Botón de Descarga ---
-            if report_results:
-                st.write("---")
-                st.subheader("📊 Export Results")
-                df = pd.DataFrame(report_results)
-                csv = df.to_csv(index=False).encode('utf-8')
-                
-                st.download_button(
-                    label="📥 Download Audit Report (CSV)",
-                    data=csv,
-                    file_name="faria_audit_report.csv",
-                    mime="text/csv",
-                )
-                st.info("The CSV file can be opened directly in Excel for easier tracking.")
+            if error_count == 0:
+                st.balloons()
     else:
         st.warning("Please paste some standards first.")
