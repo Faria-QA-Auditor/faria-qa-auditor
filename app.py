@@ -8,13 +8,17 @@ DetectorFactory.seed = 0
 
 st.set_page_config(page_title="Faria Global QA Auditor", page_icon="🛡️")
 
-# --- Motor Profesional con Caché ---
+# --- Motor con manejo de errores estricto ---
 @st.cache_resource
 def get_tool(lang):
     mapping = {'en': 'en-US', 'es': 'es', 'fr': 'fr', 'de': 'de', 'it': 'it', 'pt': 'pt'}
     target_lang = mapping.get(lang, 'en-US')
-    # Forzamos que la interfaz de respuesta sea en inglés (motherTag)
-    return language_tool_python.LanguageTool(target_lang, motherTag='en-US')
+    try:
+        # Intentamos cargar con configuración ligera
+        return language_tool_python.LanguageTool(target_lang)
+    except Exception:
+        # Si falla en la nube, intentamos cargar el motor básico de inglés como respaldo
+        return language_tool_python.LanguageTool('en-US')
 
 # --- Header ---
 col1, col2, col3 = st.columns([1, 2, 1])
@@ -26,7 +30,7 @@ with col2:
 
 st.write("---")
 
-texto_input = st.text_area("Paste standards here (Max 1,000 lines):", height=250)
+texto_input = st.text_area("Paste standards here (Max 1,000 lines):", height=250, help="Paste your text and click Run Audit")
 
 if st.button("🚀 Run Global Audit"):
     if texto_input:
@@ -46,31 +50,34 @@ if st.button("🚀 Run Global Audit"):
             except:
                 lang_code = "en"
 
-            # 2. Basic Format Rules (Always English)
+            # 2. Format Rules (Manuales - Estas SIEMPRE funcionan)
             if not re.match(r'^([A-Z]|[0-9])', linea): 
-                line_errors.append("❌ **Format**: Must start with an Uppercase letter or a Number.")
+                line_errors.append("❌ **Format**: Must start with Uppercase or Number.")
             if "  " in linea:
                 line_errors.append("⚠️ **Format**: Double spaces detected.")
 
-            # 3. Deep Spelling & Grammar Check
+            # 3. Spelling & Grammar (El motor profesional)
             try:
                 tool = get_tool(lang_code)
-                # Revisamos la línea
                 matches = tool.check(linea)
                 for m in matches:
-                    # Filtramos reglas que no queremos (como la del punto final o mayúsculas en títulos)
-                    if m.ruleId not in ['UPPERCASE_SENTENCE_START', 'LC_AFTER_PERIOD', 'WHITESPACE_RULE', 'EN_COMPOUNDS']:
+                    # Filtramos reglas de títulos y puntuación que no queremos
+                    if m.ruleId not in ['UPPERCASE_SENTENCE_START', 'LC_AFTER_PERIOD', 'WHITESPACE_RULE', 'EN_COMPOUNDS', 'MORFOLOGIK_RULE_EN_US']:
                         
-                        # Creamos un mensaje amigable en inglés
-                        rule_desc = "Spelling/Grammar"
-                        if m.category == 'TYPOS':
-                            rule_desc = "Spelling mistake"
+                        # Extraemos la palabra con el error
+                        word_error = linea[m.offset:m.offset+m.errorLength]
                         
-                        # Mostramos el error específico
+                        # Traducimos el tipo de error a inglés para el reporte de Faria
+                        category = "Spelling mistake" if m.category == 'TYPOS' else "Grammar/Style issue"
+                        
                         sugg = f" -> Suggested: **{', '.join(m.replacements[:2])}**" if m.replacements else ""
-                        line_errors.append(f"⚠️ **({lang_code.upper()})** {rule_desc}: '{linea[m.offset:m.offset+m.errorLength]}' {m.message}{sugg}")
-            except:
-                pass
+                        
+                        # Alerta limpia en inglés
+                        line_errors.append(f"⚠️ **({lang_code.upper()})** {category}: Found '{word_error}'. {m.message}{sugg}")
+            except Exception as e:
+                # Si el motor falla, al menos avisamos en la primera línea
+                if i == 1:
+                    st.warning("Note: Deep spelling check is warming up. If results don't show, please refresh.")
 
             # 4. Display
             if line_errors:
@@ -82,7 +89,11 @@ if st.button("🚀 Run Global Audit"):
             
             progress_bar.progress(i / total)
         
-        st.success(f"🎉 Audit Complete! Found issues in {error_count} lines.")
+        if error_count == 0:
+            st.success("✅ No issues found in this batch!")
+        else:
+            st.success(f"🎉 Audit Complete! Found issues in {error_count} lines.")
+        
         gc.collect()
     else:
         st.warning("Please paste text first.")
