@@ -7,7 +7,7 @@ from langdetect import detect, DetectorFactory
 DetectorFactory.seed = 0
 
 # Page configuration
-st.set_page_config(page_title="Faria Global QA Auditor", page_icon="🌍")
+st.set_page_config(page_title="Faria Global QA Auditor", page_icon="🛡️")
 
 # Caching for language tools to save memory
 @st.cache_resource
@@ -17,15 +17,20 @@ def get_tool(lang):
     except:
         return language_tool_python.LanguageTool('en-US')
 
-# --- Header Section (Styled without external images) ---
-st.markdown("""
-    <div style='text-align: center; padding: 10px; border-bottom: 2px solid #FF4B4B;'>
-        <h1 style='color: #FF4B4B; margin-bottom: 0;'>FARIA EDUCATION GROUP</h1>
-        <p style='font-size: 1.2em; color: #555;'>Global Standards QA Auditor</p>
-    </div>
-    """, unsafe_allow_html=True)
+# --- Header Section with your Uploaded JPG Logo ---
+# Usamos un diseño de columnas para centrar el logo
+col1, col2, col3 = st.columns([1, 2, 1])
+with col2:
+    # Mostramos el archivo local 'logo.jpg' que subiste a GitHub
+    try:
+        st.image("logo.jpg", width=300, caption="Faria Education Group")
+    except:
+        # Salvavidas por si GitHub tarda en reflejar la subida de la imagen
+        st.write("Faria Global QA Auditor")
 
-st.write("") # Spacer
+st.markdown("<h2 style='text-align: center;'>Global Standards QA Auditor</h2>", unsafe_allow_html=True)
+st.write("---") # Visual separator
+
 st.write("Automated format and grammar audit for curriculum standards in any language.")
 
 # --- Input Section ---
@@ -81,12 +86,12 @@ if st.button("🚀 Start Global Audit"):
                 errors.append(f"ℹ️ Note: Grammar check skipped for this line.")
 
             # 4. Display Results
-            if not errors:
+            if not errores:
                 st.success(f"Line {i} OK: {linea[:60]}...")
             else:
                 with st.expander(f"Line {i}: Issues found ({lang_code.upper()})", expanded=True):
                     st.write(f"**Source:** {linea}")
-                    for err in errors:
+                    for err in errores:
                         st.write(err)
             
             # Update progress
