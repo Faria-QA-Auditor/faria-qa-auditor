@@ -8,16 +8,14 @@ DetectorFactory.seed = 0
 
 st.set_page_config(page_title="Faria Global QA Auditor", page_icon="🛡️")
 
-# --- Optimized Language Engine (Forced English UI) ---
+# --- Optimized Language Engine ---
 @st.cache_resource
 def get_tool(lang):
-    # Mapping for detection
     mapping = {'en': 'en-US', 'es': 'es', 'fr': 'fr', 'de': 'de', 'it': 'it', 'pt': 'pt'}
     target_lang = mapping.get(lang, 'en-US')
-    
     try:
-        # 'motherTag' en-US fuerza a que los mensajes de error vengan en inglés
-        return language_tool_python.LanguageTool(target_lang, motherTag='en-US')
+        # Quitamos el motherTag para que detecte bien los typos en su idioma original
+        return language_tool_python.LanguageTool(target_lang)
     except:
         return language_tool_python.LanguageTool('en-US')
 
@@ -51,13 +49,12 @@ if st.button("🚀 Run Audit"):
             for i, linea in enumerate(lineas, 1):
                 line_errors = []
                 
-                # 1. Detection
                 try:
                     lang_code = detect(linea)
                 except:
                     lang_code = "en"
 
-                # 2. Format Rules (English only)
+                # 1. Format Rules (English)
                 if not re.match(r'^([A-Z]|[0-9])', linea): 
                     line_errors.append("❌ Must start with Uppercase or Number.")
                 if not linea.endswith('.'): 
@@ -65,19 +62,27 @@ if st.button("🚀 Run Audit"):
                 if "  " in linea:
                     line_errors.append("⚠️ Double spaces detected.")
 
-                # 3. Spelling & Grammar (Forced English Messages)
+                # 2. Spelling & Grammar (Translating alerts to English)
                 try:
                     tool = get_tool(lang_code)
                     matches = tool.check(linea)
                     for m in matches:
-                        # Ignoramos reglas de formato que ya cubrimos manualmente
                         if m.ruleId not in ['UPPERCASE_SENTENCE_START', 'LC_AFTER_PERIOD', 'WHITESPACE_RULE']:
-                            # El mensaje m.message vendrá ahora en inglés gracias al motherTag
-                            line_errors.append(f"⚠️ **({lang_code.upper()})** {m.message}")
+                            # Traducimos los mensajes más comunes manualmente para que siempre sea en inglés
+                            msg = m.message
+                            if "ortografía" in msg.lower() or "spelling" in msg.lower() or "faute" in msg.lower():
+                                msg = "Possible spelling mistake found."
+                            elif "gramática" in msg.lower() or "grammar" in msg.lower():
+                                msg = "Grammatical issue detected."
+                            else:
+                                # Si no sabemos qué es, al menos damos una alerta genérica en inglés
+                                msg = f"Issue detected: {m.ruleId}"
+                                
+                            line_errors.append(f"⚠️ **({lang_code.upper()})** {msg} (Suggested: {', '.join(m.replacements[:2])})")
                 except:
                     pass
 
-                # 4. Display (Vista Abierta)
+                # 3. Display
                 if line_errors:
                     error_count += 1
                     st.markdown(f"**Line {i}:** {linea}")
