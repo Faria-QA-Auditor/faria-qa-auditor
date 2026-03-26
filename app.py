@@ -23,18 +23,27 @@ if st.button("Ejecutar Auditoría"):
             if not linea: continue
             
             errores = []
-            if not re.match(r'^([A-Z]|[0-9])', linea): errores.append("❌ Error de inicio")
-            if not linea.endswith('.'): errores.append("❌ Falta punto final")
+            # Regla de inicio
+            if not re.match(r'^([A-Z]|[0-9])', linea): 
+                errores.append("❌ Error de inicio: Debe empezar con Mayúscula o Número.")
             
+            # Regla de punto final
+            if not linea.endswith('.'): 
+                errores.append("❌ Falta punto final")
+            
+            # Regla de ortografía (Ignorando mayúsculas iniciales que ya validamos)
             matches = tool.check(linea)
             for m in matches:
-                if m.ruleId != 'UPPERCASE_SENTENCE_START':
-                    errores.append(f"⚠️ {m.message}")
+                rule_id = getattr(m, 'ruleId', '')
+                if rule_id != 'UPPERCASE_SENTENCE_START':
+                    errores.append(f"⚠️ {m.message} (Sugerencia: {m.replacements})")
 
             if not errores:
-                st.success(f"Línea {i}: OK")
+                st.success(f"Línea {i}: OK - {linea[:50]}...")
             else:
                 st.error(f"Línea {i}: {linea}")
-                for e in errores: st.write(e)
+                for e in errores: 
+                    st.write(e)
+                st.divider()
     else:
         st.warning("Por favor, pega algo primero.")
