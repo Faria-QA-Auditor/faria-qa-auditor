@@ -3,10 +3,10 @@ import streamlit as st
 # 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(page_title="Faria Global QA Dashboard", page_icon="⭐", layout="centered")
 
-# --- CSS DEFINITIVO (Usando clases para evitar errores) ---
+# --- CSS DEFINITIVO (Sin errores de color) ---
 st.markdown("""
     <style>
-    /* Estilo para TODOS los botones */
+    /* Estilo base para todos los botones */
     .stButton>button {
         width: 100%;
         border-radius: 12px;
@@ -19,14 +19,14 @@ st.markdown("""
         transition: 0.3s;
     }
 
-    /* Efecto Hover para todos */
+    /* Efecto Hover */
     .stButton>button:hover {
         background-color: #4a148c !important;
         color: white !important;
         border-color: #ff4081 !important;
     }
 
-    /* ESTILO ESPECIAL: Auditor Global (El único que debe ser morado) */
+    /* El único botón morado: el Global */
     .global-btn button {
         background-color: #4a148c !important;
         color: white !important;
@@ -45,7 +45,7 @@ st.markdown("<h2 style='color: #444;'>Standards QA Dashboard</h2>", unsafe_allow
 st.markdown("</div>", unsafe_allow_html=True)
 st.write("---")
 
-# 3. SECCIÓN GLOBAL (Usamos un div para aplicar la clase global-btn)
+# 3. SECCIÓN GLOBAL
 st.markdown("### 🌍 Mixed Languages Auditor")
 st.markdown('<div class="global-btn">', unsafe_allow_html=True)
 if st.button("RUN GLOBAL AUDIT (Auto-Detect)"):
@@ -68,5 +68,6 @@ with col2:
     if st.button("Arabic"): st.switch_page("pages/6_Arabic_Audit.py")
     if st.button("Turkish"): st.switch_page("pages/8_Turkish_Audit.py")
 
+# 5. FOOTER (Globalizado)
 st.write("---")
-st.caption("Standards & Services Team | Bogotá, Colombia 2026")
+st.markdown("<div style='text-align: center; color: #888; font-size: 0.85em;'>Standards and Services Team | Faria Education Group</div>", unsafe_allow_html=True)
