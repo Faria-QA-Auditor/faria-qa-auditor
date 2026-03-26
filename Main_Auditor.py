@@ -3,7 +3,7 @@ import streamlit as st
 # 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(page_title="Faria Global QA Dashboard", page_icon="⭐", layout="centered")
 
-# --- CSS Personalizado para Botones Limpios y Estilo Faria ---
+# --- CSS PERSONALIZADO ---
 st.markdown("""
     <style>
     .stButton>button {
@@ -14,18 +14,18 @@ st.markdown("""
         border: 2px solid #4a148c;
         color: #4a148c;
         font-weight: bold;
-        font-size: 1.1em; /* Un poco más grande para que se lea mejor sin las letras pequeñas */
+        font-size: 1.1em;
         transition: 0.3s;
     }
     .stButton>button:hover {
-        background-color: #4a148c;
-        color: white;
-        border-color: #ff4081;
+        background-color: #4a148c !important;
+        color: white !important;
+        border-color: #ff4081 !important;
     }
-    /* Estilo resaltado para el Auditor Global */
-    div[data-testid="stVerticalBlock"] > div:nth-child(3) .stButton>button {
-        background-color: #4a148c;
-        color: white;
+    /* Estilo especial para el Auditor Global */
+    div[data-testid="stVerticalBlock"] > div:nth-child(4) .stButton>button {
+        background-color: #4a148c !important;
+        color: white !important;
         height: 4.5em;
     }
     </style>
@@ -38,19 +38,16 @@ try:
 except:
     st.title("FARIA EDUCATION GROUP")
 st.markdown("<h2 style='color: #444;'>Standards QA Dashboard</h2>", unsafe_allow_html=True)
-st.markdown("</div>", unsafe_allow_html=True)
-
-st.write("---")
-
-# 3. BOTÓN GLOBAL
+# 3. SECCIÓN GLOBAL
 st.markdown("### 🌍 Mixed Languages Auditor")
-if st.button("RUN GLOBAL AUDIT"):
+if st.button("RUN GLOBAL AUDIT (Auto-Detect)"):
     st.switch_page("pages/0_Global_Audit.py")
 
 st.write("---")
+
+# 4. SECCIÓN ESPECIALIZADA
 st.markdown("### 🎯 Specialized Auditors")
 
-# 4. FILAS DE BOTONES (Solo Nombres de Idiomas)
 col1, col2 = st.columns(2)
 with col1:
     if st.button("English"): st.switch_page("pages/1_English_Audit.py")
@@ -66,4 +63,6 @@ with col2:
 
 # 5. FOOTER
 st.write("---")
-st.caption("Standards & Services Team | Bogotá, Colombia 2026")
+st.markdown("<div style='text-align: center; color: #888; font-size: 0.8em;'>Standards & Services Team | Faria Education Group 2026</div>", unsafe_allow_html=True)
+st.markdown("</div>", unsafe_allow_html=True)
+st.write("---")
