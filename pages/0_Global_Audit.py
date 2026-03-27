@@ -1,144 +1,120 @@
 import streamlit as st
 import requests
 import re
-from langdetect import detect, DetectorFactory
 
-# Configuración de estabilidad para detección de idiomas
-DetectorFactory.seed = 0
+# 1. CONFIGURACIÓN DE PÁGINA
+st.set_page_config(page_title="Global Standards Auditor", page_icon="🌐", layout="centered")
 
-# 1. CONFIGURACIÓN DE PÁGINA (Estrella ⭐)
-st.set_page_config(page_title="Faria Global QA Auditor", page_icon="⭐", layout="centered")
-
-# --- CSS Personalizado: Identidad Faria (Bordes Morados/Rosa) ---
+# --- CSS PROFESIONAL ---
 st.markdown("""
     <style>
-    .main { background-color: #ffffff; }
-    .stTextArea textarea {
-        border: 2px solid #4a148c !important; 
-        border-radius: 8px !important;
-        background-color: #ffffff !important;
-        color: #262730 !important;
-    }
-    .stTextArea textarea:focus {
-        border-color: #ff4081 !important;
-        box-shadow: 0 0 0 0.2rem rgba(255, 64, 129, 0.25) !important;
-    }
     .stButton>button {
-        border-radius: 20px;
-        padding: 10px 25px;
+        width: 100%;
+        border-radius: 12px;
+        height: 3em;
+        background-color: #4a148c;
+        color: white;
+        font-weight: bold;
+        border: none;
+    }
+    .stButton>button:hover {
+        background-color: #ff4081;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. FUNCIÓN DEL MOTOR (SOPORTE GLOBAL)
-def check_text_api(text, lang_code):
-    try:
-        target = lang_code
-        if lang_code.startswith('zh'): target = 'zh-CN'
-        
-        response = requests.post('https://api.languagetool.org/v2/check', {
-            'text': text,
-            'language': target,
-            'motherTag': 'en-US',
-            'enabledOnly': 'false'
-        })
-        return response.json().get('matches', [])
-    except:
-        return []
-
-# 3. HEADER (Logo y Título centrado)
+# 2. HEADER CON LOGO
 st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
 try:
-    st.image("logo.jpg", width=280)
+    st.image("logo.jpg", width=250)
 except:
     st.title("FARIA EDUCATION GROUP")
-st.markdown("<h3 style='color: #444;'>Global Standards QA Auditor</h3>", unsafe_allow_html=True)
+st.markdown("<h2 style='color: #444;'>🌐 Global Standards Auditor</h2>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 st.write("---")
 
-# 4. ÁREA DE TEXTO (Limpia)
-texto_input = st.text_area("Paste standards here:", height=250)
+# 3. ENTRADA DE TEXTO Y SELECCIÓN DE IDIOMA
+idioma_dict = {
+    "English": "en",
+    "Spanish": "es",
+    "French": "fr",
+    "German": "de",
+    "Portuguese": "pt",
+    "Catalan": "ca"
+}
 
+idioma_seleccionado = st.selectbox("Select Language:", list(idioma_dict.keys()))
+texto_input = st.text_area("Paste standards here (one per line):", height=300)
+
+# --- CONTADOR GLOBAL (SOBRE 1000 PALABRAS) ---
 if texto_input:
-    lineas_reales = [l for l in texto_input.split('\n') if l.strip()]
-    count = len(lineas_reales)
-    if count > 1000:
-        st.error(f"❌ **Limit Exceeded:** {count}/1000 lines.")
-    else:
-        st.info(f"📊 **Batch Status:** {count}/1000 lines loaded.")
+    total_words = len(texto_input.split())
+    color = "green" if total_words <= 1000 else "red"
+    st.markdown(f"**Word Count:** <span style='color:{color};'>{total_words}</span> / 1000", unsafe_allow_html=True)
+    if total_words > 1000:
+        st.error("⚠️ Limit exceeded (1000 words).")
+    st.write("---")
 
-# 5. PROCESAMIENTO DE AUDITORÍA
+# 4. PROCESAMIENTO
 if st.button("🚀 Run Global Audit"):
-    if texto_input:
-        lineas = [l.strip() for l in texto_input.strip().split('\n') if l.strip()]
-        st.subheader("Audit Findings:")
-        issues_found = 0
-        
-        for i, linea in enumerate(lineas, 1):
-            line_errors = []
-            
-            # --- ESCUDO ANTI-NORUEGO (Detección de Idioma Inteligente) ---
-            try:
-                lang = detect(linea)
-                # Idiomas que manejamos en Faria. Si detecta algo raro (como NO, AF, ET), 
-                # forzamos Inglés (EN) para evitar falsos positivos masivos.
-                safe_langs = ['en', 'es', 'fr', 'de', 'it', 'pt', 'ar', 'zh', 'hi', 'tl']
-                if lang not in safe_langs:
-                    lang = 'en'
-            except:
-                lang = 'en'
-
-            # --- REGLA 1: FORMATO BÁSICO ---
-            if not re.match(r'^([A-Z]|[0-9])', linea): 
-                line_errors.append("❌ **Format**: Must start with an Uppercase letter or a Number.")
-            if "  " in linea:
-                line_errors.append("⚠️ **Format**: Double spaces detected.")
-
-            # --- REGLA 2: PALABRAS CORTADAS / BROKEN WORDS ---
-            # Detecta palabras que terminan abruptamente o tienen guiones/espacios internos extraños
-            broken_match = re.search(r'\w+-\s+\w+|\w+\s+-\w+', linea)
-            if broken_match:
-                line_errors.append(f"⚠️ **Format**: Broken word detected ('{broken_match.group()}').")
-
-            # --- REGLA 3: ORTOGRAFÍA GLOBAL (API) ---
-            matches = check_text_api(linea, lang)
-            for m in matches:
-                if m['rule']['category']['id'] not in ['CASING', 'WHITESPACE', 'PUNCTUATION']:
-                    start, end = m['offset'], m['offset'] + m['length']
-                    bad_word = linea[start:end]
-                    
-                    # Si la palabra es muy corta y está al final, es probable que esté cortada
-                    if len(bad_word) < 4 and end == len(linea):
-                        line_errors.append(f"⚠️ **Format**: Possible incomplete word at the end: '{bad_word}'")
-                        continue
-
-                    err_label = "Spelling" if m['rule']['category']['id'] == 'TYPOS' else "Grammar"
-                    suggs = [r['value'] for r in m['replacements'][:2]]
-                    sugg_txt = f" -> Suggested: **{', '.join(suggs)}**" if suggs else ""
-                    
-                    line_errors.append(f"⚠️ **({lang.upper()}) {err_label}**: Found '{bad_word}'{sugg_txt}")
-
-            if line_errors:
-                issues_found += 1
-                st.markdown(f"**Line {i}:** {linea}")
-                for e in line_errors:
-                    st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;{e}")
-                st.write("---")
-        
-        if issues_found == 0:
-            st.success("✅ Perfect! No issues detected.")
-        else:
-            st.success(f"🎉 Audit finished. Found issues in {issues_found} lines.")
+    if not texto_input.strip():
+        st.warning("Please paste some text first.")
     else:
-        st.warning("Please paste text first.")
+        lineas = [l.strip() for l in texto_input.split('\n') if l.strip()]
+        st.subheader("Audit Results")
 
-with st.sidebar:
-    st.header("⭐ Global Guide")
-    st.markdown("""
-    - **Language Support:** Global (EN, ES, FR, AR, ZH, HI, etc.)
-    - **Smart Detection:** Avoids incorrect language tagging (like NO/Norwegian).
-    - **Broken Words:** Identifies split or incomplete words.
-    - **English Reports:** All alerts are in English.
-    """)
-    st.divider()
-    st.caption("Standards & Services Team - Faria Education Group")
+        for i, linea in enumerate(lineas, 1):
+            # REGLA: Omitir "Hide details"
+            if linea.lower() == "hide details":
+                continue
+
+            errores = []
+            alertas_info = []
+
+            # REGLA: Show Details (Alerta informativa)
+            if "show details" in linea.lower():
+                alertas_info.append("ℹ️ 'Show details' detected: Please verify if there is hidden text not included in this audit.")
+
+            # REGLA: API LanguageTool con TRADUCCIÓN AL VUELO
+            try:
+                lang_code = idioma_dict[idioma_seleccionado]
+                payload = {'text': linea, 'language': lang_code}
+                res = requests.post('https://api.languagetool.org/v2/check', data=payload).json()
+                
+                for m in res.get('matches', []):
+                    msg_orig = m['message'].lower()
+                    
+                    # Ignorar errores de espacios para no saturar
+                    if "whitespace" in msg_orig or "espacios" in msg_orig or "espaces" in msg_orig:
+                        continue
+                    
+                    # TRADUCCIÓN LÓGICA DE MENSAJES (Inglés, Español, Francés, etc. -> Inglés)
+                    if any(word in msg_orig for word in ["ortográfico", "spelling", "faute d'orthographe", "rechtschreib"]):
+                        final_msg = "Possible spelling error found."
+                    elif any(word in msg_orig for word in ["tild", "acentuación", "accent"]):
+                        final_msg = "Accent/Tilde issue detected."
+                    elif any(word in msg_orig for word in ["gramatical", "grammar", "grammaire", "grammatik"]):
+                        final_msg = "Grammatical issue found."
+                    else:
+                        final_msg = "Potential grammar/style issue."
+
+                    sug = f" (Try: {m['replacements'][0]['value']})" if m['replacements'] else ""
+                    errores.append(f"Grammar/Spelling: {final_msg}{sug}")
+            except:
+                pass
+
+            # MOSTRAR RESULTADOS
+            header = f"Line {i}"
+            if not errores and not alertas_info:
+                st.success(f"{header} ✅ Perfect")
+            else:
+                icon = "⚠️" if errores else "ℹ️"
+                with st.expander(f"{header} {icon} Issues/Notes found", expanded=True):
+                    st.write(f"**Text:** {linea}")
+                    for info in alertas_info:
+                        st.info(info)
+                    for err in errores:
+                        st.error(f"- {err}")
+
+st.write("---")
+st.caption("Standards and Services Team | Faria Education Group")
