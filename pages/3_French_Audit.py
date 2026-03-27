@@ -6,7 +6,7 @@ import unicodedata
 # 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(page_title="French Standards Auditor", page_icon="🇫🇷", layout="centered")
 
-# --- CSS PERSONALIZADO (Estética Faria) ---
+# --- CSS PERSONALIZADO ---
 st.markdown("""
     <style>
     .stButton>button {
@@ -45,7 +45,6 @@ def translate_to_english(text):
     except: return "[Translation N/A]"
 
 def highlight_errors(text, words):
-    # Normalizamos el texto base para asegurar que el replace funcione con tildes
     highlighted = unicodedata.normalize('NFC', text)
     for word in set(words):
         if word and len(word.strip()) > 0:
@@ -66,7 +65,6 @@ st.write("---")
 texto_raw = st.text_area("Paste French standards here:", height=300)
 
 if texto_raw:
-    # Contamos líneas reales
     lineas_reales = [l for l in texto_raw.split('\n') if l.strip()]
     total_lines = len(lineas_reales)
     st.markdown(f"**Line Count:** {total_lines} / 1000")
@@ -79,58 +77,48 @@ if st.button("🚀 Run French Audit"):
     if not texto_raw.strip():
         st.warning("Please paste some text first.")
     else:
-        # BLOQUE DE NORMALIZACIÓN (Arregla el error de la imagen 0ec0ff)
+        # NORMALIZACIÓN NFC: Crucial para evitar errores de tildes fantasma
         texto_norm = unicodedata.normalize('NFC', texto_raw)
         lineas = [l.strip() for l in texto_norm.split('\n') if l.strip()]
 
         for i, linea in enumerate(lineas, 1):
             if linea.lower().strip() == "hide details": continue
             
-            # RECUADRO AZUL: Show Details (Se mantiene intacto)
             if "show details" in linea.lower():
-                st.info(f"Line {i} ℹ️ **'Show details' detected:** Please verify if there is hidden information in the source database.")
+                st.info(f"Line {i} ℹ️ **'Show details' detected:** Please verify if there is hidden information.")
 
             alertas = []
             to_highlight = []
 
-            # --- REGLA 1: Espacios en signos dobles (Regex propia) ---
-            if re.search(r'[^ ]([:;!?])', linea):
-                match = re.search(r'[^ ]([:;!?])', linea).group()
-                alertas.append(f"⚠️ **Typographical Error:** Missing non-breaking space before double punctuation mark '{match[-1]}'.")
-                to_highlight.append(match)
-
-            # --- REGLA 2: Ligaduras (œ) ---
+            # --- REGLA: Ligaduras (œ) ---
             if re.search(r'\boe\w+', linea.lower()):
                 palabras_oe = re.findall(r'\b\w*oe\w*\b', linea.lower())
                 for p in palabras_oe:
                     if p not in ["coefficient", "moelle"]:
-                        alertas.append(f"❌ **Ligature Error:** Use the special character 'œ' (e.g., 'sœur') instead of 'oe'.")
+                        alertas.append(f"❌ **Ligature Error:** Use 'œ' (e.g., 'sœur') instead of 'oe'.")
                         to_highlight.append(p)
 
-            # --- API LANGUAGETOOL CON TRADUCCIÓN DE ALERTAS ---
+            # --- API LANGUAGETOOL ---
             try:
                 res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea, 'language': 'fr'}).json()
                 for m in res.get('matches', []):
+                    # OMITIR REGLAS DE ESPACIADO DE PUNTUACIÓN (Solicitud del usuario)
+                    rule_id = m.get('rule', {}).get('id', '')
+                    if "FRENCH_WHITESPACE" in rule_id or "FR_PUNCTUATION" in rule_id:
+                        continue
+
                     bad_raw = linea[m['offset']:m['offset']+m['length']]
                     bad = unicodedata.normalize('NFC', bad_raw)
                     
                     if bad.lower() in ["show details", "hide details"]: continue
                     to_highlight.append(bad)
                     
-                    # TRADUCCIÓN DE ALERTAS AL INGLÉS (Para equipo no francófono)
+                    # Traducción de alertas al inglés
                     msg_fr = m['message'].lower()
-                    msg_en = "Grammar/Spelling issue" # Default
-                    
-                    if "espace" in msg_fr or "ponctuation" in msg_fr:
-                        msg_en = "Punctuation/Spacing error"
-                    elif "accord" in msg_fr:
-                        msg_en = "Grammatical agreement error (Gender/Number)"
-                    elif "orthographe" in msg_fr:
-                        msg_en = "Spelling error"
-                    elif "majuscule" in msg_fr:
-                        msg_en = "Capitalization error"
-                    elif "infinitif" in msg_fr:
-                        msg_en = "Verbal mood error (Infinitive required)"
+                    msg_en = "Grammar/Spelling issue"
+                    if "accord" in msg_fr: msg_en = "Grammatical agreement (Gender/Number)"
+                    elif "orthographe" in msg_fr: msg_en = "Spelling error"
+                    elif "infinitif" in msg_fr: msg_en = "Verbal mood (Infinitive needed)"
                     
                     sug = f" (Try: **{m['replacements'][0]['value']}**)" if m['replacements'] else ""
                     alertas.append(f"❌ **{msg_en}:** Issue in '{bad}'.{sug}")
@@ -139,13 +127,5 @@ if st.button("🚀 Run French Audit"):
             # --- RENDERIZADO ---
             if alertas:
                 with st.expander(f"Line {i} ⚠️ Issues found", expanded=True):
-                    linea_final = highlight_errors(linea, to_highlight)
-                    st.markdown(f"<div>{linea_final}</div>", unsafe_allow_html=True)
-                    # Traducción automática para que entiendan el contexto
-                    st.markdown(f"<div class='translation-box'><b>English Context:</b> {translate_to_english(linea)}</div>", unsafe_allow_html=True)
-                    for a in alertas: st.write(a)
-            elif not "show details" in linea.lower():
-                st.success(f"Line {i} ✅ Perfect")
-
-st.write("---")
-st.caption("Standards and Services Team | Faria Education Group")
+                    st.markdown(f"<div>{highlight_errors(linea, to_highlight)}</div>", unsafe_allow_html=True)
+                    st.markdown(
