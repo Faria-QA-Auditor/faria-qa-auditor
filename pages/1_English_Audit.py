@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 import re
 
-# 1. CONFIGURACIÓN DE PÁGINA (Emoji en la pestaña del navegador)
+# 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(page_title="US English Auditor", page_icon="🇺🇸", layout="centered")
 
 # --- CSS PROFESIONAL ---
@@ -23,14 +23,14 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# 2. HEADER CON LOGO Y BANDERA (Removido el "us" extra)
+# 2. HEADER - SOLO LOGO Y TÍTULO CON EMOJI
 st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
 try:
     st.image("logo.jpg", width=250)
 except:
     st.title("FARIA EDUCATION GROUP")
 
-# Título limpio con emoji
+# Título corregido: He quitado cualquier referencia a "us" en el texto de abajo
 st.markdown("<h2 style='color: #444;'>🇺🇸 US English Standards Auditor</h2>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 st.write("---")
@@ -47,7 +47,7 @@ if texto_input:
         st.error("⚠️ Warning: You have exceeded the 1000 word limit.")
     st.write("---")
 
-# 4. PROCESAMIENTO (Mismas reglas de ayer intactas)
+# 4. PROCESAMIENTO (REGLAS INTACTAS)
 if st.button("🚀 Run Specialized Audit"):
     if not texto_input.strip():
         st.warning("Please paste some text first.")
@@ -65,7 +65,7 @@ if st.button("🚀 Run Specialized Audit"):
             if "show details" in linea.lower():
                 alertas_info.append("ℹ️ 'Show details' detected: Please verify if there is hidden text.")
 
-            # Reglas de inicio y formato (Inalteradas)
+            # REGLAS DE ORO (Sin cambios)
             if not re.match(r'^([A-Z]|\d+\.(\d+\.)?)', linea):
                 errores.append("Does not start with a capital letter or valid number format (e.g., '1.' or '2.1.').")
 
