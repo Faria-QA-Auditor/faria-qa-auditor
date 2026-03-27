@@ -45,26 +45,27 @@ if st.button("🚀 Run Deep Audit"):
     else:
         lineas = [l.strip() for l in texto_input.split('\n') if l.strip()]
         for i, linea in enumerate(lineas, 1):
-            if "hide details" in linea.lower(): continue
+            # Ignorar por completo si es solo "Hide details"
+            if linea.lower().strip() == "hide details":
+                continue
             
+            # --- NOTA AZUL PRIORITARIA PARA SHOW DETAILS ---
+            if "show details" in linea.lower():
+                st.info(f"Line {i} ℹ️ **'Show details' detected:** Please verify if there is hidden information in the source database that needs to be expanded.")
+
             alertas = []
             to_highlight = []
 
-            # --- REGLA: Show Details (Formato unificado con recuadro azul) ---
-if "show details" in linea.lower():
-    st.info(f"Line {i} ℹ️ **'Show details' detected:** Please verify if there is hidden information in the source database that needs to be expanded.")
-    # No detenemos el proceso, para que el resto de la línea también se audite
-            # --- REGLA: Inicio de línea (Corregido para detectar el punto intruso de tu imagen) ---
+            # --- REGLA: Inicio de línea ---
             if re.match(r'^\.', linea):
                 alertas.append("❌ **Error [Format]:** Line starts with a dot. Please remove it.")
                 to_highlight.append(".")
 
-            # --- REGLA: Detección de Latinización (U vs Ü, O vs Ö, S vs Ş) ---
-            # Buscamos palabras comunes que suelen estar mal escritas en estándares
+            # --- REGLA: Latinización y Errores Comunes ---
             common_errors = {
                 "Ulkelere": "Ülkelere",
-                "uygulalarından": "uygulamalarından",
                 "sabir": "sabır",
+                "uygulalarından": "uygulamalarından",
                 "Adabımuaşerei": "Adabımuaşereti"
             }
             for err, fix in common_errors.items():
@@ -72,15 +73,12 @@ if "show details" in linea.lower():
                     alertas.append(f"❌ **Error [Orthography]:** Found '{err}'. Did you mean '{fix}'?")
                     to_highlight.append(err)
 
-            # --- REGLA: Armonía de Sufijos (Fıstıkçı Şahap) ---
-            if re.search(r'[fstkçşhp][Dd][ae]', linea):
-                alertas.append("⚠️ **Consonant Mutation:** Possible suffix error (-da/-de instead of -ta/-te).")
-
             # --- API LANGUAGETOOL ---
             try:
                 res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea, 'language': 'tr'}).json()
                 for m in res.get('matches', []):
                     bad = linea[m['offset']:m['offset']+m['length']]
+                    if bad.lower() in ["show details", "hide details"]: continue
                     to_highlight.append(bad)
                     sug = f" (Try: **{m['replacements'][0]['value']}** → *'{translate_to_english(m['replacements'][0]['value'])}'*)" if m['replacements'] else ""
                     alertas.append(f"Grammar/Spelling: Issue in '{bad}' ('{translate_to_english(bad)}').{sug}")
@@ -92,7 +90,7 @@ if "show details" in linea.lower():
                     st.markdown(f"<div>{highlight_errors(linea, to_highlight)}</div>", unsafe_allow_html=True)
                     st.markdown(f"<div class='translation-box'><b>English:</b> {translate_to_english(linea)}</div>", unsafe_allow_html=True)
                     for a in alertas: st.write(a)
-            else:
+            elif not "show details" in linea.lower():
                 st.success(f"Line {i} ✅ Perfect")
 
 st.caption("Standards and Services Team | Faria Education Group")
