@@ -2,10 +2,10 @@ import streamlit as st
 import requests
 import re
 
-# 1. CONFIGURACIÓN DE PÁGINA (Emoji solo en la pestaña)
+# 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(page_title="Spanish Auditor", page_icon="🇪🇸", layout="centered")
 
-# --- CSS PROFESIONAL ---
+# --- CSS PERSONALIZADO ---
 st.markdown("""
     <style>
     .stButton>button {
@@ -17,11 +17,27 @@ st.markdown("""
         font-weight: bold;
         border: none;
     }
-    .stButton>button:hover {
-        background-color: #ff4081;
+    .highlight {
+        background-color: #fff3cd;
+        font-weight: bold;
+        color: #d9534f;
+        text-decoration: underline;
+        padding: 0 2px;
     }
     </style>
     """, unsafe_allow_html=True)
+
+# --- FUNCIÓN PARA RESALTAR ERRORES ---
+def highlight_errors(text, words_to_mark):
+    highlighted = text
+    try:
+        for word in set(words_to_mark):
+            if word and len(word.strip()) > 0:
+                clean_word = re.escape(word.strip())
+                highlighted = re.sub(f"({clean_word})", r"<span class='highlight'>\1</span>", highlighted)
+    except:
+        pass
+    return highlighted
 
 # 2. HEADER
 st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
@@ -36,86 +52,73 @@ st.write("---")
 # 3. ENTRADA DE TEXTO
 texto_input = st.text_area("Paste Spanish standards here (one per line):", height=300)
 
-# --- CONTADOR GLOBAL (SOBRE 1000 PALABRAS) ---
+# --- CONTADOR DE LÍNEAS (CORREGIDO) ---
 if texto_input:
-    total_words = len(texto_input.split())
-    st.markdown(f"**Word Count:** {total_words} / 1000")
-    if total_words > 1000:
-        st.error("⚠️ Warning: Limit exceeded.")
+    lineas_reales = [l for l in texto_input.split('\n') if l.strip()]
+    total_lines = len(lineas_reales)
+    
+    st.markdown(f"**Line Count:** {total_lines} / 1000")
+    
+    if total_lines > 1000:
+        st.error("⚠️ **Warning:** The document exceeds the 1,000-line limit. Please audit in smaller batches.")
     st.write("---")
 
-# 4. PROCESAMIENTO REFORZADO PARA ESPAÑOL
-if st.button("🚀 Run Specialized Audit"):
+# 4. PROCESAMIENTO
+if st.button("🚀 Run Spanish Audit"):
     if not texto_input.strip():
         st.warning("Please paste some text first.")
     else:
-        lineas = [l.strip() for l in texto_input.split('\n') if l.strip()]
-        st.subheader("Audit Results")
+        try:
+            lineas = [l.strip() for l in texto_input.split('\n') if l.strip()]
+            st.subheader("Audit Results")
 
-        for i, linea in enumerate(lineas, 1):
-            if linea.lower() == "hide details":
-                continue
-
-            errores = []
-            alertas_info = []
-
-            # REGLA: Show Details
-            if "show details" in linea.lower():
-                alertas_info.append("ℹ️ 'Show details' detected: Verify if text is missing.")
-
-            # REGLA: Inicio (Mayúscula o Números 1. / 2.1.) - Incluye tildes y Ñ
-            if not re.match(r'^([A-ZÁÉÍÓÚÑ]|\d+\.(\d+\.)?)', linea):
-                errores.append("Error: Does not start with a capital letter or valid number format.")
-
-            # REGLA: Punto Final Obligatorio
-            if not linea.endswith('.'):
-                errores.append("Error: The line does not end with a full stop (period).")
-
-            # REGLA: Espacios extra
-            if "  " in linea:
-                errores.append("Error: Contains extra spaces between words.")
-
-            # REGLA: Palabras cortadas
-            if re.search(r'\b\w+[-_]\b|\b\w+[-_]\s|\w+[-_]$', linea):
-                errores.append("Possible broken or incomplete word detected.")
-
-            # REGLA: API LanguageTool con TRADUCCIÓN AL INGLÉS
-            try:
-                payload = {'text': linea, 'language': 'es'}
-                res = requests.post('https://api.languagetool.org/v2/check', data=payload).json()
+            for i, linea in enumerate(lineas, 1):
+                # Manejo de Meta-tags
+                if linea.lower().strip() == "hide details":
+                    continue
                 
-                for m in res.get('matches', []):
-                    msg_orig = m['message'].lower()
-                    
-                    # Ignorar espacios (ya tenemos regla local)
-                    if any(word in msg_orig for word in ["espacios", "whitespace"]):
-                        continue
-                    
-                    # Traducción lógica para el equipo global
-                    if any(word in msg_orig for word in ["ortográfico", "spelling"]):
-                        final_msg = "Possible spelling error found."
-                    elif any(word in msg_orig for word in ["tild", "acentuación", "accent"]):
-                        final_msg = "Accent/Tilde issue detected."
-                    elif "gramatical" in msg_orig:
-                        final_msg = "Grammatical issue found."
-                    else:
-                        final_msg = "Potential grammar/style issue."
+                if "show details" in linea.lower():
+                    st.info(f"Line {i} ℹ️ **'Show details' detected:** Please verify if there is hidden information.")
 
-                    sug = f" (Try: {m['replacements'][0]['value']})" if m['replacements'] else ""
-                    errores.append(f"Grammar/Spelling: {final_msg}{sug}")
-            except:
-                pass
+                alertas_finales = []
+                words_to_highlight = []
+                
+                # Regla de punto final (Común en estándares de español)
+                if not linea.endswith('.'):
+                    alertas_finales.append("⚠️ **Punctuation:** Line does not end with a period.")
+                
+                # Regla de inicio con mayúscula
+                if linea and not linea[0].isupper() and not linea[0].isdigit():
+                    alertas_finales.append("❌ **Format:** Line should start with a capital letter.")
+                    words_to_highlight.append(linea[0])
 
-            # MOSTRAR RESULTADOS
-            header = f"Line {i}"
-            if not errores and not alertas_info:
-                st.success(f"{header} ✅ Perfect")
-            else:
-                icon = "⚠️" if errores else "ℹ️"
-                with st.expander(f"{header} {icon} Issues found", expanded=True):
-                    st.write(f"**Text:** {linea}")
-                    for info in alertas_info: st.info(info)
-                    for err in errores: st.error(f"- {err}")
+                # API LanguageTool para Ortografía y Gramática
+                try:
+                    res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea, 'language': 'es'}).json()
+                    for m in res.get('matches', []):
+                        bad_word = linea[m['offset']:m['offset']+m['length']]
+                        if bad_word.lower() in ["show details", "hide details"]: continue
+                        
+                        words_to_highlight.append(bad_word)
+                        sug = f" (Try: **{m['replacements'][0]['value']}**)" if m['replacements'] else ""
+                        alertas_finales.append(f"Grammar/Spelling: Issue in '{bad_word}'.{sug}")
+                except:
+                    pass
+
+                # Renderizado de resultados
+                header = f"Line {i}"
+                if not alertas_finales:
+                    if not "show details" in linea.lower():
+                        st.success(f"{header} ✅ Perfect")
+                else:
+                    with st.expander(f"{header} ⚠️ Issues found", expanded=True):
+                        linea_html = highlight_errors(linea, words_to_highlight)
+                        st.markdown(f"<div style='background: #fff; padding: 15px; border: 1px solid #ddd; font-size: 16px;'>{linea_html}</div>", unsafe_allow_html=True)
+                        for a in alertas_finales:
+                            st.write(a)
+                            
+        except Exception as e:
+            st.error(f"An unexpected error occurred: {e}")
 
 st.write("---")
 st.caption("Standards and Services Team | Faria Education Group")
