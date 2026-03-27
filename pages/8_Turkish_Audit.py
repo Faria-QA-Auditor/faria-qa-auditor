@@ -50,10 +50,10 @@ if st.button("🚀 Run Deep Audit"):
             alertas = []
             to_highlight = []
 
-            # --- REGLA: Show Details ---
-            if "show details" in linea.lower():
-                alertas.append("ℹ️ **Note [Missing Info]:** 'Show details' found. Data might be truncated.")
-
+            # --- REGLA: Show Details (Formato unificado con recuadro azul) ---
+if "show details" in linea.lower():
+    st.info(f"Line {i} ℹ️ **'Show details' detected:** Please verify if there is hidden information in the source database that needs to be expanded.")
+    # No detenemos el proceso, para que el resto de la línea también se audite
             # --- REGLA: Inicio de línea (Corregido para detectar el punto intruso de tu imagen) ---
             if re.match(r'^\.', linea):
                 alertas.append("❌ **Error [Format]:** Line starts with a dot. Please remove it.")
