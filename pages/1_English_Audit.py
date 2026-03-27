@@ -23,67 +23,84 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🇺🇸 English Standards Auditor")
-st.markdown("---")
+# 2. HEADER CON LOGO
+st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
+try:
+    st.image("logo.jpg", width=250)
+except:
+    st.title("FARIA EDUCATION GROUP")
+st.markdown("<h2 style='color: #444;'>🇺🇸 English Standards Auditor</h2>", unsafe_allow_html=True)
+st.markdown("</div>", unsafe_allow_html=True)
+st.write("---")
 
-# 2. ENTRADA DE TEXTO
-texto_input = st.text_area("Paste English standards here (one per line):", height=300)
+# 3. ENTRADA DE TEXTO
+texto_input = st.text_area("Paste English standards here:", height=300)
 
-# 3. PROCESAMIENTO
+# --- CONTADOR GLOBAL (ESTILO GLOBAL AUDITOR) ---
+if texto_input:
+    total_words = len(texto_input.split())
+    color = "green" if total_words <= 1000 else "red"
+    st.markdown(f"**Word Count:** <span style='color:{color};'>{total_words}</span> / 1000", unsafe_allow_html=True)
+    if total_words > 1000:
+        st.error("⚠️ Limit exceeded (1000 words). Please reduce the text for a complete audit.")
+    st.write("---")
+
+# 4. PROCESAMIENTO
 if st.button("🚀 Run Specialized Audit"):
     if not texto_input.strip():
         st.warning("Please paste some text first.")
     else:
-        # Dividir por líneas reales
-        lineas_puras = texto_input.split('\n')
-        lineas = [l.strip() for l in lineas_puras if l.strip()]
-        
+        lineas = [l.strip() for l in texto_input.split('\n') if l.strip()]
         st.subheader("Audit Results")
-        st.write(f"Analyzed {len(lineas)} standards.")
 
         for i, linea in enumerate(lineas, 1):
+            # Omitir líneas que sean exactamente "Hide details"
+            if linea.lower() == "hide details":
+                continue
+
             errores = []
-            
-            # --- CONTADOR DE PALABRAS ---
-            word_count = len(linea.split())
-            
-            # --- REGLA: Inicio (Mayúscula o Formato Numero) ---
-            # Acepta: "Text", "1.", "2.1."
+            alertas_info = []
+
+            # --- REGLA: Show Details (Información oculta) ---
+            if "show details" in linea.lower():
+                alertas_info.append("ℹ️ 'Show details' detected: Please verify if there is hidden text not included in this audit.")
+
+            # --- REGLA: Inicio (Mayúscula o Formato Numero: 1. o 2.1.) ---
             if not re.match(r'^([A-Z]|\d+\.(\d+\.)?)', linea):
                 errores.append("Does not start with a capital letter or valid number format (e.g., '1.' or '2.1.').")
 
             # --- REGLA: Espacios extra ---
             if "  " in linea:
-                linea_limpia = re.sub(r' {2,}', ' ', linea)
-                errores.append(f"Contains extra spaces. Suggestion: '{linea_limpia}'")
+                errores.append("Contains extra spaces between words.")
 
             # --- REGLA: Palabras cortadas ---
-            if re.search(r'\b\w+[-_]\b|\b\w+[-_]\s', linea):
+            if re.search(r'\b\w+[-_]\b|\b\w+[-_]\s|\w+[-_]$', linea):
                 errores.append("Detected potentially broken word (ending in '-' or '_').")
 
-            # --- REGLA: API LanguageTool (Ortografía y Puntuación) ---
+            # --- REGLA: API LanguageTool (Ortografía y Puntuación multi-dialecto) ---
             try:
-                payload = {
-                    'text': linea, 
-                    'language': 'en',
-                    'motherTag': 'en-US,en-GB,en-AU'
-                }
+                payload = {'text': linea, 'language': 'en', 'motherTag': 'en-US,en-GB,en-AU'}
                 res = requests.post('https://api.languagetool.org/v2/check', data=payload).json()
                 for m in res.get('matches', []):
-                    # Solo agregar si no es un error de espacios que ya detectamos arriba
+                    # Ignorar errores de espacios de la API para usar nuestra regla local
                     if "whitespace" not in m['message'].lower():
                         sug = f" (Try: {m['replacements'][0]['value']})" if m['replacements'] else ""
                         errores.append(f"Grammar/Spelling: {m['message']}{sug}")
             except:
                 pass
 
-            # --- MOSTRAR RESULTADOS POR LÍNEA ---
-            header = f"Line {i} | {word_count} words"
-            
-            if not errores:
+            # --- MOSTRAR RESULTADOS ---
+            header = f"Line {i}"
+            if not errores and not alertas_info:
                 st.success(f"{header} ✅ Perfect")
             else:
-                with st.expander(f"{header} ⚠️ {len(errores)} issues found", expanded=True):
+                icon = "⚠️" if errores else "ℹ️"
+                with st.expander(f"{header} {icon} Issues/Notes found", expanded=True):
                     st.write(f"**Text:** {linea}")
+                    for info in alertas_info:
+                        st.info(info)
                     for err in errores:
                         st.error(f"- {err}")
+
+st.write("---")
+st.caption("Standards and Services Team | Faria Education Group")
