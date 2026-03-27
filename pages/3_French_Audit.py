@@ -128,4 +128,10 @@ if st.button("🚀 Run French Audit"):
             if alertas:
                 with st.expander(f"Line {i} ⚠️ Issues found", expanded=True):
                     st.markdown(f"<div>{highlight_errors(linea, to_highlight)}</div>", unsafe_allow_html=True)
-                    st.markdown(
+                    st.markdown(f"<div class='translation-box'><b>English Context:</b> {translate_to_english(linea)}</div>", unsafe_allow_html=True)
+                    for a in alertas: st.write(a)
+            elif not "show details" in linea.lower():
+                st.success(f"Line {i} ✅ Perfect")
+
+st.write("---")
+st.caption("Standards and Services Team | Faria Education Group")
