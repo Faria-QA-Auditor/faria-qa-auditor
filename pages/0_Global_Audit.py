@@ -30,23 +30,14 @@ try:
 except:
     st.title("FARIA EDUCATION GROUP")
 st.markdown("<h2 style='color: #444;'>🌐 Global Standards Auditor</h2>", unsafe_allow_html=True)
+st.markdown("<p style='color: #666;'>Automatic Language Detection & English Diagnostics</p>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 st.write("---")
 
-# 3. ENTRADA DE TEXTO Y SELECCIÓN DE IDIOMA
-idioma_dict = {
-    "English": "en",
-    "Spanish": "es",
-    "French": "fr",
-    "German": "de",
-    "Portuguese": "pt",
-    "Catalan": "ca"
-}
+# 3. ENTRADA DE TEXTO
+texto_input = st.text_area("Paste standards here (The system will detect the language automatically):", height=300)
 
-idioma_seleccionado = st.selectbox("Select Language:", list(idioma_dict.keys()))
-texto_input = st.text_area("Paste standards here (one per line):", height=300)
-
-# --- CONTADOR GLOBAL (SOBRE 1000 PALABRAS) ---
+# --- CONTADOR GLOBAL ---
 if texto_input:
     total_words = len(texto_input.split())
     color = "green" if total_words <= 1000 else "red"
@@ -71,27 +62,29 @@ if st.button("🚀 Run Global Audit"):
             errores = []
             alertas_info = []
 
-            # REGLA: Show Details (Alerta informativa)
+            # REGLA: Show Details
             if "show details" in linea.lower():
                 alertas_info.append("ℹ️ 'Show details' detected: Please verify if there is hidden text not included in this audit.")
 
-            # REGLA: API LanguageTool con TRADUCCIÓN AL VUELO
+            # REGLA: API LanguageTool con DETECCIÓN AUTOMÁTICA Y TRADUCCIÓN
             try:
-                lang_code = idioma_dict[idioma_seleccionado]
-                payload = {'text': linea, 'language': lang_code}
+                # 'auto' permite que la API decida el idioma sola
+                payload = {'text': linea, 'language': 'auto'}
                 res = requests.post('https://api.languagetool.org/v2/check', data=payload).json()
+                
+                # Detectar qué idioma encontró la API para contexto (opcional)
+                detected_lang = res.get('language', {}).get('name', 'Unknown')
                 
                 for m in res.get('matches', []):
                     msg_orig = m['message'].lower()
                     
-                    # Ignorar errores de espacios para no saturar
-                    if "whitespace" in msg_orig or "espacios" in msg_orig or "espaces" in msg_orig:
+                    if any(word in msg_orig for word in ["whitespace", "espacios", "espaces", "leerzeichen"]):
                         continue
                     
-                    # TRADUCCIÓN LÓGICA DE MENSAJES (Inglés, Español, Francés, etc. -> Inglés)
-                    if any(word in msg_orig for word in ["ortográfico", "spelling", "faute d'orthographe", "rechtschreib"]):
+                    # TRADUCCIÓN LÓGICA DE MENSAJES AL INGLÉS
+                    if any(word in msg_orig for word in ["ortográfico", "spelling", "orthographe", "rechtschreib", "ortográfica"]):
                         final_msg = "Possible spelling error found."
-                    elif any(word in msg_orig for word in ["tild", "acentuación", "accent"]):
+                    elif any(word in msg_orig for word in ["tild", "acentuación", "accent", "akzent"]):
                         final_msg = "Accent/Tilde issue detected."
                     elif any(word in msg_orig for word in ["gramatical", "grammar", "grammaire", "grammatik"]):
                         final_msg = "Grammatical issue found."
@@ -99,7 +92,7 @@ if st.button("🚀 Run Global Audit"):
                         final_msg = "Potential grammar/style issue."
 
                     sug = f" (Try: {m['replacements'][0]['value']})" if m['replacements'] else ""
-                    errores.append(f"Grammar/Spelling: {final_msg}{sug}")
+                    errores.append(f"Grammar/Spelling [{detected_lang}]: {final_msg}{sug}")
             except:
                 pass
 
