@@ -21,8 +21,26 @@ st.markdown("""
         direction: rtl;
         text-align: right;
     }
+    .translation-box {
+        background-color: #f0f2f6;
+        border-left: 5px solid #4a148c;
+        padding: 10px;
+        margin: 10px 0;
+        font-style: italic;
+        color: #333;
+    }
     </style>
     """, unsafe_allow_html=True)
+
+# --- FUNCIÓN DE TRADUCCIÓN AL VUELO ---
+def translate_to_english(text):
+    try:
+        # Servicio gratuito de traducción para referencia rápida
+        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=ar&tl=en&dt=t&q={text}"
+        res = requests.get(url).json()
+        return res[0][0][0]
+    except:
+        return "Translation unavailable"
 
 # 2. HEADER
 st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
@@ -56,48 +74,37 @@ if st.button("🚀 Run Specialized Audit"):
                     st.info(f"Line {i} ℹ️ 'Show details' detected: Verify if text is missing.")
                 continue
 
-            # --- LISTA DE ALERTAS PERSONALIZADAS (PRIORIDAD) ---
+            # --- ALERTAS PERSONALIZADAS ---
             alertas_locales = []
             
-            # REGLA: Puntuación Occidental
             if re.search(r'[,;]', linea):
                 alertas_locales.append("⚠️ **Warning [Punctuation]:** Found western comma (,) or semicolon (;) instead of Arabic (، / ؛).")
 
-            # REGLA: Mezcla de números
             if re.search(r'[0-9]', linea) and re.search(r'[٠-٩]', linea):
-                alertas_locales.append("❌ **Error [Format]:** Mixed number systems detected (123 vs ١٢٣). Please use only one.")
+                alertas_locales.append("❌ **Error [Format]:** Mixed number systems detected. Please use only one.")
 
-            # REGLA: Waw (و) con espacio
             if re.search(r'\sو\s', linea) or linea.startswith('و '):
-                alertas_locales.append("❌ **Error [Syntax]:** Space detected after conjunction 'Waw' (و). Please merge with the following word.")
+                alertas_locales.append("❌ **Error [Syntax]:** Space detected after conjunction 'Waw' (و).")
 
-            # REGLA: Longitud
-            if len(linea.split()) > 40:
-                alertas_locales.append("ℹ️ **Note [Style]:** Sentence exceeds 40 words. Consider breaking it down.")
-
-            # REGLA: Tatweel
-            if "ـ" in linea:
-                alertas_locales.append("ℹ️ **Note [Style]:** Tatweel (Kashida) detected. Consider removing it for cleaner data.")
-
-            # REGLA: Hamzas (Detección básica manual para األدب)
             if "األدب" in linea:
                 alertas_locales.append("❌ **Error [Orthography]:** Missing Hamza on Alif. Use 'الأدب' instead of 'األدب'.")
 
-            # --- LLAMADA A API (Para lo que no cubren las reglas manuales) ---
+            if len(linea.split()) > 40:
+                alertas_locales.append("ℹ️ **Note [Style]:** Sentence exceeds 40 words.")
+
+            # --- API LANGUAGETOOL ---
             errores_api = []
             try:
                 res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea, 'language': 'ar'}).json()
                 for m in res.get('matches', []):
-                    # Solo añadir si no es algo que ya detectamos manualmente
                     msg = m['message'].lower()
-                    if "space" in msg or "comma" in msg: continue
-                    
+                    if any(x in msg for x in ["space", "comma", "espacio"]): continue
                     sug = f" (Try: {m['replacements'][0]['value']})" if m['replacements'] else ""
                     errores_api.append(f"Grammar/Spelling: Potential issue found.{sug}")
             except:
                 pass
 
-            # MOSTRAR RESULTADOS
+            # --- RENDERIZADO DE RESULTADOS ---
             header = f"Line {i}"
             todas_las_alertas = alertas_locales + errores_api
 
@@ -105,7 +112,14 @@ if st.button("🚀 Run Specialized Audit"):
                 st.success(f"{header} ✅ Perfect")
             else:
                 with st.expander(f"{header} ⚠️ Issues found", expanded=True):
-                    st.markdown(f"<div style='direction: rtl; text-align: right; background: #f9f9f9; padding: 10px;'>{linea}</div>", unsafe_allow_html=True)
+                    # Texto original (RTL)
+                    st.markdown(f"<div style='direction: rtl; text-align: right; background: #fff; padding: 10px; border: 1px solid #ddd;'>{linea}</div>", unsafe_allow_html=True)
+                    
+                    # TRADUCCIÓN AUTOMÁTICA
+                    eng_translation = translate_to_english(linea)
+                    st.markdown(f"<div class='translation-box'><b>English Translation:</b> {eng_translation}</div>", unsafe_allow_html=True)
+                    
+                    # Errores
                     for a in todas_las_alertas:
                         st.write(a)
 
