@@ -1,11 +1,12 @@
 import streamlit as st
 import requests
 import re
+import unicodedata
 
 # 1. CONFIGURACIÓN DE PÁGINA
-st.set_page_config(page_title="English Auditor", page_icon="🇺🇸", layout="centered")
+st.set_page_config(page_title="English Standards Auditor", page_icon="🇺🇸", layout="centered")
 
-# --- CSS PROFESIONAL ---
+# --- CSS PERSONALIZADO ---
 st.markdown("""
     <style>
     .stButton>button {
@@ -17,11 +18,30 @@ st.markdown("""
         font-weight: bold;
         border: none;
     }
-    .stButton>button:hover {
-        background-color: #ff4081;
+    .highlight {
+        background-color: #fff3cd;
+        font-weight: bold;
+        color: #d9534f;
+        text-decoration: underline;
+        padding: 0 2px;
+    }
+    .complexity-badge {
+        background-color: #ff4b4b;
+        color: white;
+        padding: 5px 10px;
+        border-radius: 5px;
+        font-weight: bold;
     }
     </style>
     """, unsafe_allow_html=True)
+
+# --- FUNCIONES DE APOYO ---
+def highlight_errors(text, words):
+    highlighted = text
+    for word in set(words):
+        if word and len(word.strip()) > 0:
+            highlighted = re.sub(f"({re.escape(word)})", r"<span class='highlight'>\1</span>", highlighted)
+    return highlighted
 
 # 2. HEADER
 st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
@@ -30,77 +50,101 @@ try:
 except:
     st.title("FARIA EDUCATION GROUP")
 st.markdown("<h2 style='color: #444;'>English Standards Auditor</h2>", unsafe_allow_html=True)
-st.markdown("</div>", unsafe_allow_html=True)
 st.write("---")
 
-# 3. ENTRADA DE TEXTO
-texto_input = st.text_area("Paste English standards here (one per line):", height=300)
+# 3. CONFIGURACIÓN DEL DIALECTO (Dialect Switch)
+col1, col2 = st.columns([1, 1])
+with col1:
+    dialect = st.selectbox("Select Regional Standard:", ["US (American)", "UK (British)", "AU (Australian)", "CA (Canadian)"])
+with col2:
+    st.info(f"Targeting: **{dialect}** rules.")
 
-# --- CONTADOR GLOBAL ---
+# 4. INPUT Y CONTADOR POR LÍNEAS
+texto_input = st.text_area("Paste English standards here:", height=300)
+
 if texto_input:
-    total_words = len(texto_input.split())
-    st.markdown(f"**Word Count:** {total_words} / 1000")
-    if total_words > 1000:
-        st.error("⚠️ Warning: Limit exceeded.")
+    # Contamos líneas reales
+    lineas_reales = [l for l in texto_input.split('\n') if l.strip()]
+    total_lines = len(lineas_reales)
+    st.markdown(f"**Line Count:** {total_lines} / 1000")
+    if total_lines > 1000:
+        st.error("⚠️ **Warning:** Document exceeds the 1,000-line limit.")
     st.write("---")
 
-# 4. PROCESAMIENTO REFORZADO
-if st.button("🚀 Run Specialized Audit"):
+# 5. LÓGICA DE AUDITORÍA
+if st.button("🚀 Run English Audit"):
     if not texto_input.strip():
-        st.warning("Please paste some text first.")
+        st.warning("Please paste some text.")
     else:
-        # Dividimos por líneas y limpiamos
-        lineas = [l.strip() for l in texto_input.split('\n') if l.strip()]
-        st.subheader("Audit Results")
-
+        # Normalización NFC para evitar errores de encoding
+        texto_norm = unicodedata.normalize('NFC', texto_input)
+        lineas = [l.strip() for l in texto_norm.split('\n') if l.strip()]
+        
+        parallelism_errors = 0
+        
         for i, linea in enumerate(lineas, 1):
-            if linea.lower() == "hide details":
-                continue
-
-            errores = []
+            if linea.lower().strip() == "hide details": continue
             
-            # REGLA: Show Details
+            # RECUADRO AZUL: Show Details
             if "show details" in linea.lower():
-                errores.append("ℹ️ 'Show details' detected: Verify if text is missing.")
+                st.info(f"Line {i} ℹ️ **'Show details' detected:** Please verify if there is hidden information in the source database.")
 
-            # REGLA: Inicio (Mayúscula o Números 1. / 2.1.)
-            if not re.match(r'^([A-Z]|\d+\.(\d+\.)?)', linea):
-                errores.append("Error: Does not start with a capital letter or valid number format (1. or 2.1.).")
+            alertas = []
+            to_highlight = []
 
-            # REGLA: Espacios extra
-            if "  " in linea:
-                errores.append("Error: Contains extra spaces between words.")
+            # --- REGLA 1: Dialect Consistency (-ize/-ise, -or/-our) ---
+            if "US" in dialect:
+                if re.search(r'\b\w+ise\b', linea): 
+                    alertas.append("⚠️ **Dialect Inconsistency:** Detected '-ise' (UK/AU). Use '-ize' for US standards.")
+                if re.search(r'\b\w+our\b', linea):
+                    alertas.append("⚠️ **Dialect Inconsistency:** Detected '-our' (UK/AU). Use '-or' for US (e.g., 'color').")
+            else: # UK, AU, CA
+                if re.search(r'\b\w+ize\b', linea):
+                    alertas.append("⚠️ **Dialect Inconsistency:** Detected '-ize' (US). Preferred '-ise' for UK/AU educational standards.")
 
-            # REGLA: Palabras cortadas (detecta 'KINDERGART' o palabras sin vocales finales comunes)
-            # Ahora es más sensible a palabras que terminan abruptamente en consonantes raras
-            if re.search(r'\b\w+[-_]\b|\w+[-_]$|(?<!\b[aiouyAIOUY])(?<!the)(?<!and)[bcdfghjklmnpqrstvwxyzBCDFGHJKLMNPQRSTVWXYZ]{4,}$', linea):
-                errores.append("Possible broken or incomplete word detected.")
+            # --- REGLA 2: Parallelism Check (Simple check) ---
+            words = linea.split()
+            if words and words[0].endswith('ing'):
+                parallelism_errors += 1
+                alertas.append("❌ **Parallelism Failure:** Line starts with a Gerund (-ing). Check consistency with previous lines.")
 
-            # REGLA: API LanguageTool (Ortografía estricta)
+            # --- REGLA 3: Forbidden/Informal Words ---
+            forbidden = {"get": "acquire/obtain", "thing": "element/component", "stuff": "material", "a lot": "significantly"}
+            for word, sug in forbidden.items():
+                if re.search(rf'\b{word}\b', linea.lower()):
+                    alertas.append(f"⚠️ **Academic Tone:** Avoid '{word}'. Suggested: **{sug}**.")
+                    to_highlight.append(word)
+
+            # --- REGLA 4: Punctuation (Oxford Comma & Quotes) ---
+            if "US" in dialect and '"' in linea:
+                if re.search(r'".\s', linea) or linea.endswith('"'):
+                    if not re.search(r'[.,?]"', linea):
+                        alertas.append("❌ **Punctuation Style:** In US English, periods/commas typically go *inside* quotes.")
+
+            # --- API LANGUAGETOOL (Specific Dialect) ---
+            lang_code = "en-US" if "US" in dialect else "en-GB"
             try:
-                # Forzamos la revisión de ortografía en inglés
-                payload = {'text': linea, 'language': 'en-US'}
-                res = requests.post('https://api.languagetool.org/v2/check', data=payload).json()
-                
+                res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea, 'language': lang_code}).json()
                 for m in res.get('matches', []):
-                    # Capturamos 'stndards' y otros typos
-                    msg = m['message']
-                    sug = f" (Try: {m['replacements'][0]['value']})" if m['replacements'] else ""
-                    errores.append(f"Grammar/Spelling: {msg}{sug}")
-            except:
-                errores.append("Could not connect to spelling service.")
+                    bad = linea[m['offset']:m['offset']+m['length']]
+                    if bad.lower() in ["show details", "hide details"]: continue
+                    to_highlight.append(bad)
+                    sug = f" (Try: **{m['replacements'][0]['value']}**)" if m['replacements'] else ""
+                    alertas.append(f"❌ **{m['rule']['category']['name']}:** {m['message']}{sug}")
+            except: pass
 
-            # MOSTRAR RESULTADOS
-            header = f"Line {i}"
-            if not errores:
-                st.success(f"{header} ✅ Perfect")
-            else:
-                # Si hay "show details" pero no hay errores reales, usamos azul, sino rojo
-                with st.expander(f"{header} ⚠️ Issues found", expanded=True):
-                    st.write(f"**Text:** {linea}")
-                    for err in errores:
-                        if "ℹ️" in err: st.info(err)
-                        else: st.error(f"- {err}")
+            # --- RENDERIZADO ---
+            if alertas:
+                with st.expander(f"Line {i} ⚠️ Issues found", expanded=True):
+                    st.markdown(f"<div>{highlight_errors(linea, to_highlight)}</div>", unsafe_allow_html=True)
+                    for a in alertas: st.write(a)
+            elif not "show details" in linea.lower():
+                st.success(f"Line {i} ✅ Perfect")
+
+        # ZENDESK-STYLE TRIAGE
+        if parallelism_errors > 3:
+            st.markdown("---")
+            st.markdown("<div class='complexity-badge'>🚩 High Complexity Review: Multiple parallelism issues detected.</div>", unsafe_allow_html=True)
 
 st.write("---")
 st.caption("Standards and Services Team | Faria Education Group")
