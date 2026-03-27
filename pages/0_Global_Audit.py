@@ -23,14 +23,14 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# 2. HEADER CON LOGO
+# 2. HEADER CON LOGO (Texto secundario removido)
 st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
 try:
     st.image("logo.jpg", width=250)
 except:
     st.title("FARIA EDUCATION GROUP")
 st.markdown("<h2 style='color: #444;'>🌐 Global Standards Auditor</h2>", unsafe_allow_html=True)
-st.markdown("<p style='color: #666;'>Automatic Language Detection & English Diagnostics</p>", unsafe_allow_html=True)
+# Se eliminó la línea de texto descriptivo aquí
 st.markdown("</div>", unsafe_allow_html=True)
 st.write("---")
 
@@ -78,6 +78,7 @@ if st.button("🚀 Run Global Audit"):
                 for m in res.get('matches', []):
                     msg_orig = m['message'].lower()
                     
+                    # Ignorar errores de espacios para no saturar
                     if any(word in msg_orig for word in ["whitespace", "espacios", "espaces", "leerzeichen"]):
                         continue
                     
