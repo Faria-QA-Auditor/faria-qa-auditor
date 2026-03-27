@@ -5,7 +5,7 @@ import re
 # 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(page_title="Arabic Auditor", page_icon="🇸🇦", layout="centered")
 
-# --- CSS PROFESIONAL ---
+# --- CSS PROFESIONAL CON RESALTADO ---
 st.markdown("""
     <style>
     .stButton>button {
@@ -29,18 +29,34 @@ st.markdown("""
         font-style: italic;
         color: #333;
     }
+    .highlight {
+        background-color: #fff3cd;
+        font-weight: bold;
+        color: #d9534f;
+        text-decoration: underline;
+        padding: 0 2px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-# --- FUNCIÓN DE TRADUCCIÓN AL VUELO ---
+# --- FUNCIÓN DE TRADUCCIÓN (AR -> EN) ---
 def translate_to_english(text):
+    if not text or text.strip() == "": return ""
     try:
-        # Servicio gratuito de traducción para referencia rápida
         url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=ar&tl=en&dt=t&q={text}"
         res = requests.get(url).json()
         return res[0][0][0]
     except:
-        return "Translation unavailable"
+        return "N/A"
+
+# --- FUNCIÓN PARA RESALTAR ERRORES EN EL BLOQUE ORIGINAL ---
+def highlight_errors(text, words_to_mark):
+    highlighted = text
+    for word in set(words_to_mark):
+        if word and len(word.strip()) > 0:
+            clean_word = re.escape(word.strip())
+            highlighted = re.sub(f"({clean_word})", r"<span class='highlight'>\1</span>", highlighted)
+    return highlighted
 
 # 2. HEADER
 st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
@@ -71,57 +87,58 @@ if st.button("🚀 Run Specialized Audit"):
         for i, linea in enumerate(lineas, 1):
             if linea.lower() in ["hide details", "show details"]:
                 if "show" in linea.lower():
-                    st.info(f"Line {i} ℹ️ 'Show details' detected: Verify if text is missing.")
+                    st.info(f"Line {i} ℹ️ 'Show details' detected.")
                 continue
 
-            # --- ALERTAS PERSONALIZADAS ---
-            alertas_locales = []
+            alertas_finales = []
+            words_to_highlight = []
             
+            # --- REGLAS MANUALES ---
             if re.search(r'[,;]', linea):
-                alertas_locales.append("⚠️ **Warning [Punctuation]:** Found western comma (,) or semicolon (;) instead of Arabic (، / ؛).")
-
-            if re.search(r'[0-9]', linea) and re.search(r'[٠-٩]', linea):
-                alertas_locales.append("❌ **Error [Format]:** Mixed number systems detected. Please use only one.")
-
-            if re.search(r'\sو\s', linea) or linea.startswith('و '):
-                alertas_locales.append("❌ **Error [Syntax]:** Space detected after conjunction 'Waw' (و).")
-
+                alertas_finales.append("⚠️ **Warning [Punctuation]:** Found western symbols.")
+            
             if "األدب" in linea:
-                alertas_locales.append("❌ **Error [Orthography]:** Missing Hamza on Alif. Use 'الأدب' instead of 'األدب'.")
+                alertas_finales.append("❌ **Error [Orthography]:** Missing Hamza. Use 'الأدب' (Literature).")
+                words_to_highlight.append("األدب")
 
-            if len(linea.split()) > 40:
-                alertas_locales.append("ℹ️ **Note [Style]:** Sentence exceeds 40 words.")
-
-            # --- API LANGUAGETOOL ---
-            errores_api = []
+            # --- API LANGUAGETOOL + TRADUCCIÓN DE SUGERENCIAS ---
             try:
                 res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea, 'language': 'ar'}).json()
                 for m in res.get('matches', []):
-                    msg = m['message'].lower()
-                    if any(x in msg for x in ["space", "comma", "espacio"]): continue
-                    sug = f" (Try: {m['replacements'][0]['value']})" if m['replacements'] else ""
-                    errores_api.append(f"Grammar/Spelling: Potential issue found.{sug}")
+                    # Identificar palabra errónea
+                    offset, length = m['offset'], m['length']
+                    bad_word = linea[offset:offset+length]
+                    words_to_highlight.append(bad_word)
+                    
+                    # Traducir sugerencia si existe
+                    sug_text = ""
+                    if m['replacements']:
+                        best_sug = m['replacements'][0]['value']
+                        sug_translation = translate_to_english(best_sug)
+                        sug_text = f" (Try: **{best_sug}** → *'{sug_translation}'*)"
+                    
+                    # Traducir la palabra mala para contexto
+                    bad_word_trans = translate_to_english(bad_word)
+                    alertas_finales.append(f"Grammar/Spelling: Issue in '{bad_word}' ('{bad_word_trans}').{sug_text}")
             except:
                 pass
 
-            # --- RENDERIZADO DE RESULTADOS ---
+            # --- RENDERIZADO ---
             header = f"Line {i}"
-            todas_las_alertas = alertas_locales + errores_api
-
-            if not todas_las_alertas:
+            if not alertas_finales:
                 st.success(f"{header} ✅ Perfect")
             else:
                 with st.expander(f"{header} ⚠️ Issues found", expanded=True):
-                    # Texto original (RTL)
-                    st.markdown(f"<div style='direction: rtl; text-align: right; background: #fff; padding: 10px; border: 1px solid #ddd;'>{linea}</div>", unsafe_allow_html=True)
+                    # 1. Bloque resaltado
+                    linea_html = highlight_errors(linea, words_to_highlight)
+                    st.markdown(f"<div style='direction: rtl; text-align: right; background: #fff; padding: 15px; border: 1px solid #ddd; font-size: 18px;'>{linea_html}</div>", unsafe_allow_html=True)
                     
-                    # TRADUCCIÓN AUTOMÁTICA
-                    eng_translation = translate_to_english(linea)
-                    st.markdown(f"<div class='translation-box'><b>English Translation:</b> {eng_translation}</div>", unsafe_allow_html=True)
+                    # 2. Traducción completa de la línea
+                    line_trans = translate_to_english(linea)
+                    st.markdown(f"<div class='translation-box'><b>Line Context:</b> {line_trans}</div>", unsafe_allow_html=True)
                     
-                    # Errores
-                    for a in todas_las_alertas:
+                    # 3. Listado de alertas con traducciones de sugerencias
+                    for a in alertas_finales:
                         st.write(a)
 
-st.write("---")
-st.caption("Standards and Services Team | Faria Education Group")
+st
