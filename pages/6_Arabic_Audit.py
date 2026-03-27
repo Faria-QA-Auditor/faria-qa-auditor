@@ -5,7 +5,7 @@ import re
 # 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(page_title="Arabic Auditor", page_icon="🇸🇦", layout="centered")
 
-# --- CSS PROFESIONAL CON RESALTADO ---
+# --- CSS PROFESIONAL ---
 st.markdown("""
     <style>
     .stButton>button {
@@ -39,23 +39,26 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- FUNCIÓN DE TRADUCCIÓN (AR -> EN) ---
+# --- FUNCIÓN DE TRADUCCIÓN SEGURA (No rompe la app) ---
 def translate_to_english(text):
     if not text or text.strip() == "": return ""
     try:
-        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=ar&tl=en&dt=t&q={text}"
-        res = requests.get(url).json()
+        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=ar&tl=en&dt=t&q={requests.utils.quote(text)}"
+        res = requests.get(url, timeout=5).json()
         return res[0][0][0]
-    except:
-        return "N/A"
+    except Exception:
+        return "[Translation service temporarily unavailable]"
 
-# --- FUNCIÓN PARA RESALTAR ERRORES EN EL BLOQUE ORIGINAL ---
+# --- FUNCIÓN PARA RESALTAR ERRORES ---
 def highlight_errors(text, words_to_mark):
     highlighted = text
-    for word in set(words_to_mark):
-        if word and len(word.strip()) > 0:
-            clean_word = re.escape(word.strip())
-            highlighted = re.sub(f"({clean_word})", r"<span class='highlight'>\1</span>", highlighted)
+    try:
+        for word in set(words_to_mark):
+            if word and len(word.strip()) > 0:
+                clean_word = re.escape(word.strip())
+                highlighted = re.sub(f"({clean_word})", r"<span class='highlight'>\1</span>", highlighted)
+    except:
+        pass
     return highlighted
 
 # 2. HEADER
@@ -81,64 +84,62 @@ if st.button("🚀 Run Specialized Audit"):
     if not texto_input.strip():
         st.warning("Please paste some text first.")
     else:
-        lineas = [l.strip() for l in texto_input.split('\n') if l.strip()]
-        st.subheader("Audit Results")
+        try:
+            lineas = [l.strip() for l in texto_input.split('\n') if l.strip()]
+            st.subheader("Audit Results")
 
-        for i, linea in enumerate(lineas, 1):
-            if linea.lower() in ["hide details", "show details"]:
-                if "show" in linea.lower():
-                    st.info(f"Line {i} ℹ️ 'Show details' detected.")
-                continue
+            for i, linea in enumerate(lineas, 1):
+                if linea.lower() in ["hide details", "show details"]:
+                    if "show" in linea.lower():
+                        st.info(f"Line {i} ℹ️ 'Show details' detected.")
+                    continue
 
-            alertas_finales = []
-            words_to_highlight = []
-            
-            # --- REGLAS MANUALES ---
-            if re.search(r'[,;]', linea):
-                alertas_finales.append("⚠️ **Warning [Punctuation]:** Found western symbols.")
-            
-            if "األدب" in linea:
-                alertas_finales.append("❌ **Error [Orthography]:** Missing Hamza. Use 'الأدب' (Literature).")
-                words_to_highlight.append("األدب")
+                alertas_finales = []
+                words_to_highlight = []
+                
+                # Reglas Manuales
+                if re.search(r'[,;]', linea):
+                    alertas_finales.append("⚠️ **Warning [Punctuation]:** Found western symbols (use Arabic ، o ؛).")
+                
+                if "األدب" in linea:
+                    alertas_finales.append("❌ **Error [Orthography]:** Missing Hamza. Use 'الأدب'.")
+                    words_to_highlight.append("األدب")
 
-            # --- API LANGUAGETOOL + TRADUCCIÓN DE SUGERENCIAS ---
-            try:
-                res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea, 'language': 'ar'}).json()
-                for m in res.get('matches', []):
-                    # Identificar palabra errónea
-                    offset, length = m['offset'], m['length']
-                    bad_word = linea[offset:offset+length]
-                    words_to_highlight.append(bad_word)
-                    
-                    # Traducir sugerencia si existe
-                    sug_text = ""
-                    if m['replacements']:
-                        best_sug = m['replacements'][0]['value']
-                        sug_translation = translate_to_english(best_sug)
-                        sug_text = f" (Try: **{best_sug}** → *'{sug_translation}'*)"
-                    
-                    # Traducir la palabra mala para contexto
-                    bad_word_trans = translate_to_english(bad_word)
-                    alertas_finales.append(f"Grammar/Spelling: Issue in '{bad_word}' ('{bad_word_trans}').{sug_text}")
-            except:
-                pass
+                # API LanguageTool
+                try:
+                    res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea, 'language': 'ar'}, timeout=5).json()
+                    for m in res.get('matches', []):
+                        offset, length = m['offset'], m['length']
+                        bad_word = linea[offset:offset+length]
+                        words_to_highlight.append(bad_word)
+                        
+                        sug_text = ""
+                        if m['replacements']:
+                            best_sug = m['replacements'][0]['value']
+                            sug_translation = translate_to_english(best_sug)
+                            sug_text = f" (Try: **{best_sug}** → *'{sug_translation}'*)"
+                        
+                        bad_word_trans = translate_to_english(bad_word)
+                        alertas_finales.append(f"Grammar/Spelling: Issue in '{bad_word}' ('{bad_word_trans}').{sug_text}")
+                except:
+                    pass
 
-            # --- RENDERIZADO ---
-            header = f"Line {i}"
-            if not alertas_finales:
-                st.success(f"{header} ✅ Perfect")
-            else:
-                with st.expander(f"{header} ⚠️ Issues found", expanded=True):
-                    # 1. Bloque resaltado
-                    linea_html = highlight_errors(linea, words_to_highlight)
-                    st.markdown(f"<div style='direction: rtl; text-align: right; background: #fff; padding: 15px; border: 1px solid #ddd; font-size: 18px;'>{linea_html}</div>", unsafe_allow_html=True)
-                    
-                    # 2. Traducción completa de la línea
-                    line_trans = translate_to_english(linea)
-                    st.markdown(f"<div class='translation-box'><b>Line Context:</b> {line_trans}</div>", unsafe_allow_html=True)
-                    
-                    # 3. Listado de alertas con traducciones de sugerencias
-                    for a in alertas_finales:
-                        st.write(a)
+                # Renderizado
+                header = f"Line {i}"
+                if not alertas_finales:
+                    st.success(f"{header} ✅ Perfect")
+                else:
+                    with st.expander(f"{header} ⚠️ Issues found", expanded=True):
+                        linea_html = highlight_errors(linea, words_to_highlight)
+                        st.markdown(f"<div style='direction: rtl; text-align: right; background: #fff; padding: 15px; border: 1px solid #ddd; font-size: 18px;'>{linea_html}</div>", unsafe_allow_html=True)
+                        
+                        line_trans = translate_to_english(linea)
+                        st.markdown(f"<div class='translation-box'><b>Line Context:</b> {line_trans}</div>", unsafe_allow_html=True)
+                        
+                        for a in alertas_finales:
+                            st.write(a)
+        except Exception as e:
+            st.error(f"An unexpected error occurred: {e}")
 
-st
+st.write("---")
+st.caption("Standards and Services Team | Faria Education Group")
