@@ -1,11 +1,12 @@
 import streamlit as st
 import requests
 import re
+import unicodedata
 
-# 1. CONFIGURACIÓN DE PÁGINA (Emoji solo en la pestaña del navegador)
-st.set_page_config(page_title="French Auditor", page_icon="🇫🇷", layout="centered")
+# 1. CONFIGURACIÓN DE PÁGINA
+st.set_page_config(page_title="French Standards Auditor", page_icon="🇫🇷", layout="centered")
 
-# --- CSS PROFESIONAL (Estilo Faria) ---
+# --- CSS PERSONALIZADO ---
 st.markdown("""
     <style>
     .stButton>button {
@@ -17,11 +18,38 @@ st.markdown("""
         font-weight: bold;
         border: none;
     }
-    .stButton>button:hover {
-        background-color: #ff4081;
+    .translation-box {
+        background-color: #f0f2f6;
+        border-left: 5px solid #4a148c;
+        padding: 10px;
+        margin: 10px 0;
+        font-style: italic;
+    }
+    .highlight {
+        background-color: #fff3cd;
+        font-weight: bold;
+        color: #d9534f;
+        text-decoration: underline;
+        padding: 0 2px;
     }
     </style>
     """, unsafe_allow_html=True)
+
+# --- FUNCIONES DE APOYO ---
+def translate_to_english(text):
+    if not text or len(text.strip()) < 2: return ""
+    try:
+        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=fr&tl=en&dt=t&q={requests.utils.quote(text)}"
+        res = requests.get(url, timeout=5).json()
+        return res[0][0][0]
+    except: return "[Translation N/A]"
+
+def highlight_errors(text, words):
+    highlighted = text
+    for word in set(words):
+        if word and len(word.strip()) > 0:
+            highlighted = re.sub(f"({re.escape(word)})", r"<span class='highlight'>\1</span>", highlighted)
+    return highlighted
 
 # 2. HEADER
 st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
@@ -30,90 +58,93 @@ try:
 except:
     st.title("FARIA EDUCATION GROUP")
 st.markdown("<h2 style='color: #444;'>French Standards Auditor</h2>", unsafe_allow_html=True)
-st.markdown("</div>", unsafe_allow_html=True)
 st.write("---")
 
-# 3. ENTRADA DE TEXTO
-texto_input = st.text_area("Paste French standards here (one per line):", height=300)
+# 3. INPUT Y CONTADOR POR LÍNEA
+texto_input = st.text_area("Paste French standards here:", height=300)
 
-# --- CONTADOR GLOBAL (SOBRE 1000 PALABRAS) ---
 if texto_input:
-    total_words = len(texto_input.split())
-    st.markdown(f"**Word Count:** {total_words} / 1000")
-    if total_words > 1000:
-        st.error("⚠️ Warning: Limit exceeded (1000 words max).")
+    lineas_reales = [l for l in texto_input.split('\n') if l.strip()]
+    total_lines = len(lineas_reales)
+    st.markdown(f"**Line Count:** {total_lines} / 1000")
+    if total_lines > 1000:
+        st.error("⚠️ **Warning:** Document exceeds the 1,000-line limit.")
     st.write("---")
 
-# 4. PROCESAMIENTO REFORZADO PARA FRANCÉS
-if st.button("🚀 Run Specialized Audit"):
+# 4. LÓGICA DE AUDITORÍA
+if st.button("🚀 Run French Audit"):
     if not texto_input.strip():
         st.warning("Please paste some text first.")
     else:
-        lineas = [l.strip() for l in texto_input.split('\n') if l.strip()]
-        st.subheader("Audit Results")
+        # Normalización NFC (Vital para acentos franceses y ligaduras)
+        texto_norm = unicodedata.normalize('NFC', texto_input)
+        lineas = [l.strip() for l in texto_norm.split('\n') if l.strip()]
 
         for i, linea in enumerate(lineas, 1):
-            # Omitir "Hide details"
-            if linea.lower() == "hide details":
-                continue
-
-            errores = []
-            alertas_info = []
-
-            # REGLA: Show Details
+            if linea.lower().strip() == "hide details": continue
+            
+            # RECUADRO AZUL: Show Details
             if "show details" in linea.lower():
-                alertas_info.append("ℹ️ 'Show details' detected: Please verify if there is hidden text not included in this audit.")
+                st.info(f"Line {i} ℹ️ **'Show details' detected:** Please verify if there is hidden information in the source database.")
 
-            # REGLA: Inicio (Mayúscula, números 1. / 2.1. e incluye caracteres franceses À, È, Ç, etc.)
-            if not re.match(r'^([A-ZÀ-Ÿ]|\d+\.(\d+\.)?)', linea):
-                errores.append("Error: Does not start with a capital letter or valid number format.")
+            alertas = []
+            to_highlight = []
 
-            # REGLA: Espacios extra
-            if "  " in linea:
-                errores.append("Error: Contains extra spaces between words.")
+            # --- REGLA 1: Tipografía Francesa (Espacios en signos dobles) ---
+            # Detecta falta de espacio antes de : ; ! ?
+            if re.search(r'[^ ]([:;!?])', linea):
+                match = re.search(r'[^ ]([:;!?])', linea).group()
+                alertas.append(f"⚠️ **Typographical Error:** Missing space before double punctuation mark '{match[-1]}'.")
+                to_highlight.append(match)
 
-            # REGLA: Palabras cortadas o irregulares
-            if re.search(r'\b\w+[-_]\b|\b\w+[-_]\s|\w+[-_]$', linea):
-                errores.append("Possible broken or incomplete word detected.")
+            # --- REGLA 2: Ligaduras (oe -> œ) ---
+            if re.search(r'\boe\w+', linea.lower()):
+                palabras_oe = re.findall(r'\b\w*oe\w*\b', linea.lower())
+                # Excluir palabras legítimas como 'coefficient'
+                for p in palabras_oe:
+                    if p not in ["coefficient", "moelle"]:
+                        alertas.append(f"❌ **Ligature Error:** Use the special character 'œ' for words like 'sœur' or 'œuvre' instead of 'oe'.")
+                        to_highlight.append(p)
 
-            # REGLA: API LanguageTool (Francés Global + Traducción de alertas al Inglés)
+            # --- REGLA 3: Mayúsculas Acentuadas ---
+            if re.search(r'\b[A-Z]{2,}\b', linea):
+                if any(word in linea for word in ["ETUDE", "ECOLE", "ETAT"]):
+                    alertas.append("⚠️ **Orthography:** Uppercase letters must maintain accents in French (e.g., ÉTUDE).")
+
+            # --- REGLA 4: Anglicismos Prohibidos ---
+            anglicisms = {"feedback": "rétroaction", "email": "courriel", "newsletter": "infolettre"}
+            for eng, fr in anglicisms.items():
+                if re.search(rf'\b{eng}\b', linea.lower()):
+                    alertas.append(f"⚠️ **Forbidden Anglicism:** Avoid '{eng}'. Use the French term **'{fr}'**.")
+                    to_highlight.append(eng)
+
+            # --- API LANGUAGETOOL (Francés) ---
             try:
-                # 'fr' cubre variantes de Francia, Canadá y África
-                payload = {'text': linea, 'language': 'fr'}
-                res = requests.post('https://api.languagetool.org/v2/check', data=payload).json()
-                
+                res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea, 'language': 'fr'}).json()
                 for m in res.get('matches', []):
-                    msg_orig = m['message'].lower()
+                    bad = linea[m['offset']:m['offset']+m['length']]
+                    if bad.lower() in ["show details", "hide details"]: continue
+                    to_highlight.append(bad)
                     
-                    # Ignorar espacios (regla local propia)
-                    if any(word in msg_orig for word in ["espace", "whitespace"]):
-                        continue
+                    # Traducción de mensajes de error comunes
+                    msg = m['message']
+                    if "orthographe" in msg.lower(): msg = "Spelling error"
+                    if "accord" in msg.lower(): msg = "Agreement/Grammar issue"
+                    if "infinitif" in msg.lower(): msg = "Verbal inconsistency (Check Infinitive vs Imperative)"
                     
-                    # TRADUCCIÓN "AL VUELO" A INGLÉS
-                    if any(word in msg_orig for word in ["orthographe", "spelling"]):
-                        final_msg = "Possible spelling error found."
-                    elif any(word in msg_orig for word in ["accent", "tilde"]):
-                        final_msg = "Accent issue detected (Check acute, grave, circumflex, etc.)."
-                    elif any(word in msg_orig for word in ["grammaire", "grammatical"]):
-                        final_msg = "Grammatical issue found."
-                    else:
-                        final_msg = "Potential grammar/style issue."
+                    sug = f" (Try: **{m['replacements'][0]['value']}**)" if m['replacements'] else ""
+                    alertas.append(f"❌ **{msg}:** Issue in '{bad}'.{sug}")
+            except: pass
 
-                    sug = f" (Try: {m['replacements'][0]['value']})" if m['replacements'] else ""
-                    errores.append(f"Grammar/Spelling: {final_msg}{sug}")
-            except:
-                pass
-
-            # MOSTRAR RESULTADOS
-            header = f"Line {i}"
-            if not errores and not alertas_info:
-                st.success(f"{header} ✅ Perfect")
-            else:
-                icon = "⚠️" if errores else "ℹ️"
-                with st.expander(f"{header} {icon} Issues found", expanded=True):
-                    st.write(f"**Text:** {linea}")
-                    for info in alertas_info: st.info(info)
-                    for err in errores: st.error(f"- {err}")
+            # --- RENDERIZADO ---
+            if alertas:
+                with st.expander(f"Line {i} ⚠️ Issues found", expanded=True):
+                    st.markdown(f"<div>{highlight_errors(linea, to_highlight)}</div>", unsafe_allow_html=True)
+                    # Traducción automática al vuelo para contexto
+                    st.markdown(f"<div class='translation-box'><b>English Context:</b> {translate_to_english(linea)}</div>", unsafe_allow_html=True)
+                    for a in alertas: st.write(a)
+            elif not "show details" in linea.lower():
+                st.success(f"Line {i} ✅ Perfect")
 
 st.write("---")
 st.caption("Standards and Services Team | Faria Education Group")
