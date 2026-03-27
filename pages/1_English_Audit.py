@@ -2,8 +2,8 @@ import streamlit as st
 import requests
 import re
 
-# 1. CONFIGURACIÓN DE PÁGINA
-st.set_page_config(page_title="US English Auditor", page_icon="🇺🇸", layout="centered")
+# 1. CONFIGURACIÓN DE PÁGINA (Emoji solo en la pestaña del navegador)
+st.set_page_config(page_title="English Auditor", page_icon="🇺🇸", layout="centered")
 
 # --- CSS PROFESIONAL ---
 st.markdown("""
@@ -23,15 +23,15 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# 2. HEADER - SOLO LOGO Y TÍTULO CON EMOJI
+# 2. HEADER - SOLO LOGO Y TÍTULO LIMPIO (Removido "US" y emoji del título)
 st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
 try:
     st.image("logo.jpg", width=250)
 except:
     st.title("FARIA EDUCATION GROUP")
 
-# Título corregido: He quitado cualquier referencia a "us" en el texto de abajo
-st.markdown("<h2 style='color: #444;'>🇺🇸 US English Standards Auditor</h2>", unsafe_allow_html=True)
+# Título simplificado y limpio
+st.markdown("<h2 style='color: #444;'>English Standards Auditor</h2>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 st.write("---")
 
@@ -47,7 +47,7 @@ if texto_input:
         st.error("⚠️ Warning: You have exceeded the 1000 word limit.")
     st.write("---")
 
-# 4. PROCESAMIENTO (REGLAS INTACTAS)
+# 4. PROCESAMIENTO (Mismas reglas de ayer intactas)
 if st.button("🚀 Run Specialized Audit"):
     if not texto_input.strip():
         st.warning("Please paste some text first.")
@@ -65,16 +65,20 @@ if st.button("🚀 Run Specialized Audit"):
             if "show details" in linea.lower():
                 alertas_info.append("ℹ️ 'Show details' detected: Please verify if there is hidden text.")
 
-            # REGLAS DE ORO (Sin cambios)
+            # REGLAS DE ORO (Inalteradas)
+            # Regla de inicio (Mayúscula, 1., 2.1.)
             if not re.match(r'^([A-Z]|\d+\.(\d+\.)?)', linea):
                 errores.append("Does not start with a capital letter or valid number format (e.g., '1.' or '2.1.').")
 
+            # Espacios extra
             if "  " in linea:
                 errores.append("Contains extra spaces between words.")
 
+            # Palabras cortadas
             if re.search(r'\b\w+[-_]\b|\b\w+[-_]\s|\w+[-_]$', linea):
                 errores.append("Detected potentially broken word (ending in '-' or '_').")
 
+            # Ortografía y Puntuación multi-dialecto
             try:
                 payload = {'text': linea, 'language': 'en', 'motherTag': 'en-US,en-GB,en-AU'}
                 res = requests.post('https://api.languagetool.org/v2/check', data=payload).json()
@@ -85,6 +89,7 @@ if st.button("🚀 Run Specialized Audit"):
             except:
                 pass
 
+            # MOSTRAR RESULTADOS
             header = f"Line {i}"
             if not errores and not alertas_info:
                 st.success(f"{header} ✅ Perfect")
