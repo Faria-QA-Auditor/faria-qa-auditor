@@ -59,7 +59,7 @@ if texto_input:
     if total_lines > 2500:
         st.error("⚠️ **Warning:** Document exceeds the 2,500-line limit.")
 
-if st.button("🚀 Run Deep Audit"):
+if st.button("🚀 Run Turkish Audit"):
     if not texto_input.strip():
         st.warning("Please paste some text.")
     else:
