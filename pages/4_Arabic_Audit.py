@@ -17,6 +17,10 @@ st.markdown("""
         font-weight: bold;
         border: none;
     }
+    /* Barra de Progreso Morada */
+    .stProgress > div > div > div > div {
+        background-color: #4a148c;
+    }
     textarea {
         direction: rtl;
         text-align: right;
@@ -29,6 +33,16 @@ st.markdown("""
         font-style: italic;
         color: #333;
     }
+    /* Estilo para el Recuadro Azul de Base de Datos */
+    .db-info-box {
+        background-color: #e3f2fd;
+        border-left: 5px solid #2196f3;
+        padding: 15px;
+        color: #0c5460;
+        margin: 10px 0;
+        border-radius: 4px;
+        font-weight: 500;
+    }
     .highlight {
         background-color: #fff3cd;
         font-weight: bold;
@@ -39,7 +53,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- FUNCIÓN DE TRADUCCIÓN SEGURA (No rompe la app) ---
+# --- FUNCIÓN DE TRADUCCIÓN SEGURA ---
 def translate_to_english(text):
     if not text or text.strip() == "": return ""
     try:
@@ -71,12 +85,15 @@ st.markdown("<h2 style='color: #444;'>Arabic Standards Auditor</h2>", unsafe_all
 st.markdown("</div>", unsafe_allow_html=True)
 st.write("---")
 
-# 3. ENTRADA DE TEXTO
+# 3. ENTRADA DE TEXTO Y CONTADOR (2500 Líneas)
 texto_input = st.text_area("Paste Arabic standards here:", height=300)
 
 if texto_input:
-    total_words = len(texto_input.split())
-    st.markdown(f"**Word Count:** {total_words} / 1000")
+    lineas_reales = [l for l in texto_input.split('\n') if l.strip()]
+    total_lines = len(lineas_reales)
+    st.markdown(f"**Line Count:** {total_lines} / 2500")
+    if total_lines > 2500:
+        st.error("⚠️ **Warning:** Document exceeds the 2,500-line limit.")
     st.write("---")
 
 # 4. PROCESAMIENTO
@@ -86,12 +103,28 @@ if st.button("🚀 Run Specialized Audit"):
     else:
         try:
             lineas = [l.strip() for l in texto_input.split('\n') if l.strip()]
-            st.subheader("Audit Results")
+            
+            # --- BARRA DE PROGRESO ---
+            progress_bar = st.progress(0)
+            status_text = st.empty()
 
             for i, linea in enumerate(lineas, 1):
-                if linea.lower() in ["hide details", "show details"]:
-                    if "show" in linea.lower():
-                        st.info(f"Line {i} ℹ️ 'Show details' detected.")
+                # Actualización visual
+                progress_bar.progress(i / len(lineas))
+                status_text.text(f"Auditing line {i} of {len(lineas)}...")
+
+                linea_lower = linea.lower().strip()
+
+                # --- REGLA: HIDE/SHOW DETAILS ---
+                if "hide details" in linea_lower: continue
+
+                if "show details" in linea_lower:
+                    st.markdown(f"""
+                        <div class='db-info-box'>
+                            Line {i} ℹ️ <b>'Show details' detected:</b> There is hidden information in this line. 
+                            Please verify the source database content.
+                        </div>
+                    """, unsafe_allow_html=True)
                     continue
 
                 alertas_finales = []
@@ -111,6 +144,9 @@ if st.button("🚀 Run Specialized Audit"):
                     for m in res.get('matches', []):
                         offset, length = m['offset'], m['length']
                         bad_word = linea[offset:offset+length]
+                        
+                        if bad_word.lower() in ["show", "details", "hide"]: continue
+                        
                         words_to_highlight.append(bad_word)
                         
                         sug_text = ""
@@ -120,7 +156,7 @@ if st.button("🚀 Run Specialized Audit"):
                             sug_text = f" (Try: **{best_sug}** → *'{sug_translation}'*)"
                         
                         bad_word_trans = translate_to_english(bad_word)
-                        alertas_finales.append(f"Grammar/Spelling: Issue in '{bad_word}' ('{bad_word_trans}').{sug_text}")
+                        alertas_finales.append(f"❌ **Grammar/Spelling:** Issue in '{bad_word}' ('{bad_word_trans}').{sug_text}")
                 except:
                     pass
 
@@ -138,6 +174,9 @@ if st.button("🚀 Run Specialized Audit"):
                         
                         for a in alertas_finales:
                             st.write(a)
+            
+            status_text.text("Audit complete!")
+            
         except Exception as e:
             st.error(f"An unexpected error occurred: {e}")
 
