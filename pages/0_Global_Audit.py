@@ -9,17 +9,12 @@ st.set_page_config(page_title="Global Mixed Auditor", page_icon="🌍", layout="
 # --- CSS CORPORATIVO FARIA (FUCSIA) ---
 st.markdown("""
     <style>
-    /* Botón Fucsia */
     .stButton>button { 
         width: 100%; border-radius: 12px; background-color: #e91e63; 
         color: white; font-weight: bold; height: 3em; border: none;
     }
     .stButton>button:hover { background-color: #d81b60; color: white; }
-    
-    /* Barra de Progreso Fucsia */
     .stProgress > div > div > div > div { background-color: #e91e63; }
-    
-    /* Estilos de Cajas */
     .translation-box { 
         background-color: #f8f9fa; border-left: 5px solid #e91e63; 
         padding: 12px; margin: 10px 0; font-style: italic; color: #333;
@@ -46,10 +41,25 @@ def translate_to_english(text):
 
 def highlight_errors(text, words):
     highlighted = text
-    # Ordenar por longitud para no romper etiquetas HTML anidadas
+    # Ordenar por longitud descendente para evitar conflictos de reemplazo
     for word in sorted(set(words), key=len, reverse=True):
-        if word and len(word.strip()) > 0:
-            highlighted = re.sub(f"({re.escape(word)})", r"<span class='highlight'>\1</span>", highlighted)
+        if not word or len(word.strip()) == 0: continue
+        
+        clean_word = re.escape(word.strip())
+        
+        # Lógica mejorada: Si el error es una letra sola (como 'b' o 'd') o una numeración (4.d.)
+        # solo resaltamos la primera coincidencia exacta para no marcar todo el párrafo.
+        if len(word.strip()) <= 2 or "." in word:
+            # Buscamos la palabra rodeada de espacios o al inicio (Word Boundaries)
+            pattern = rf"(?i)\b{clean_word}\b"
+            if re.search(pattern, highlighted):
+                highlighted = re.sub(pattern, rf"<span class='highlight'>{word}</span>", highlighted, count=1)
+            else:
+                # Si no tiene bordes claros (ej: 4.d.), usamos reemplazo simple limitado a 1
+                highlighted = highlighted.replace(word, f"<span class='highlight'>{word}</span>", 1)
+        else:
+            # Para palabras normales, resaltamos todas las ocurrencias
+            highlighted = re.sub(f"({clean_word})", r"<span class='highlight'>\1</span>", highlighted, flags=re.IGNORECASE)
     return highlighted
 
 # 2. HEADER
@@ -65,14 +75,12 @@ st.write("---")
 texto_raw = st.text_area("Paste mixed standards here:", height=350, placeholder="Supports Spanish, French, Arabic, Turkish, English...")
 
 if texto_raw:
-    # Normalización para manejar caracteres como la 'ñ' correctamente
     texto_raw = unicodedata.normalize('NFC', texto_raw)
     lineas_reales = [l for l in texto_raw.split('\n') if l.strip()]
     total_lines = len(lineas_reales)
     st.markdown(f"**Total Line Count:** {total_lines} / 2500")
     if total_lines > 2500:
         st.error("⚠️ **Warning:** Document exceeds the 2,500-line limit.")
-    st.write("---")
 
 # 4. BOTÓN Y PROCESAMIENTO
 if st.button("🚀 Run Global Audit"):
@@ -80,7 +88,6 @@ if st.button("🚀 Run Global Audit"):
         st.warning("Please paste some text first.")
     else:
         lineas = [l.strip() for l in texto_raw.split('\n') if l.strip()]
-        
         progress_bar = st.progress(0)
         status_text = st.empty()
 
@@ -90,40 +97,32 @@ if st.button("🚀 Run Global Audit"):
             
             linea_lower = linea.lower()
 
-            # --- FILTRO 1: BOTONES DE BASE DE DATOS (Ignorar auditoría) ---
-            if "hide details" in linea_lower:
-                continue
+            # --- FILTRO 1: BOTONES DE BASE DE DATOS (Solución a imagen e7d17b) ---
+            if "hide details" in linea_lower: continue
             
             if "show details" in linea_lower:
-                st.markdown(f"<div class='db-info-box'>Line {i} ℹ️ <b>'Show details' detected:</b> Verify hidden database content.</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='db-info-box'>Line {i} ℹ️ <b>'Show details' detected:</b> Verify database content.</div>", unsafe_allow_html=True)
                 continue
 
-            # --- FILTRO 2: CORRECCIÓN PREVENTIVA (Caso 'manana') ---
-            # Si detectamos 'manana' como palabra completa, la tratamos como 'mañana'
+            # --- FILTRO 2: CORRECCIÓN PARA 'MANANA' (Solución a imagen e7d196) ---
             linea_audit = re.sub(r'\bmanana\b', 'mañana', linea, flags=re.IGNORECASE)
 
             alertas = []
             to_highlight = []
 
-            # --- AUDITORÍA EXTERNA (LanguageTool) ---
             try:
                 res = requests.post('https://api.languagetool.org/v2/check', 
                                     data={'text': linea_audit, 'language': 'auto'}, timeout=8).json()
                 
                 for m in res.get('matches', []):
-                    # Extraer la palabra con error del texto original
                     bad = linea[m['offset']:m['offset']+m['length']]
                     
-                    # Evitar errores por palabras de sistema o duplicados
-                    if bad.lower() in ["show", "details", "hide"] or bad in to_highlight:
-                        continue
+                    if bad.lower() in ["show", "details", "hide"]: continue
                     
-                    # Filtro de sugerencia idéntica (Evita errores como de -> De)
+                    # Filtro de redundancia: No marcar si la sugerencia es igual (Solución a imagen e67401)
                     if m['replacements']:
                         best_sug = m['replacements'][0]['value']
-                        if best_sug.strip() == bad.strip():
-                            continue
-                        
+                        if best_sug.strip() == bad.strip(): continue
                         sug_text = f" (Try: **{best_sug}**)"
                     else:
                         sug_text = ""
@@ -133,19 +132,13 @@ if st.button("🚀 Run Global Audit"):
             except:
                 pass
 
-            # --- RENDERIZADO DE RESULTADOS ---
+            # --- RENDERIZADO ---
             if alertas:
                 with st.expander(f"Line {i} ⚠️ Issues found", expanded=True):
-                    # Mostramos el texto original con resaltado
                     linea_html = highlight_errors(linea, to_highlight)
                     st.markdown(f"<div style='background: white; padding: 15px; border: 1px solid #ddd; border-radius: 8px;'>{linea_html}</div>", unsafe_allow_html=True)
-                    
-                    # Traducción para contexto en inglés
-                    contexto = translate_to_english(linea)
-                    st.markdown(f"<div class='translation-box'><b>English Context:</b> {contexto}</div>", unsafe_allow_html=True)
-                    
-                    for a in alertas:
-                        st.write(a)
+                    st.markdown(f"<div class='translation-box'><b>English Context:</b> {translate_to_english(linea)}</div>", unsafe_allow_html=True)
+                    for a in alertas: st.write(a)
             else:
                 st.success(f"Line {i} ✅ Perfect")
 
