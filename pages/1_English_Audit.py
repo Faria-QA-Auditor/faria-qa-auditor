@@ -6,9 +6,10 @@ import unicodedata
 # 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(page_title="English Standards Auditor", page_icon="🇺🇸", layout="centered")
 
-# --- CSS PERSONALIZADO (Mantiene estética Faria) ---
+# --- CSS PERSONALIZADO (Incluye Barra de Progreso Morada) ---
 st.markdown("""
     <style>
+    /* Estilo del Botón */
     .stButton>button {
         width: 100%;
         border-radius: 12px;
@@ -17,6 +18,10 @@ st.markdown("""
         color: white;
         font-weight: bold;
         border: none;
+    }
+    /* Estilo de la Barra de Progreso (Morado Faria) */
+    .stProgress > div > div > div > div {
+        background-color: #4a148c;
     }
     .highlight {
         background-color: #fff3cd;
@@ -53,12 +58,12 @@ except:
 st.markdown("<h2 style='color: #444;'>English Standards Auditor</h2>", unsafe_allow_html=True)
 st.write("---")
 
-# 3. DIALECT SWITCH (Simplificado a US/UK)
+# 3. DIALECT SWITCH
 dialect = st.radio("Select Regional Standard:", ["US (American English)", "UK (British English)"], horizontal=True)
 st.info(f"Targeting: **{dialect}** rules and spelling conventions.")
 
-# 4. INPUT Y CONTADOR POR LÍNEA (Actualizado a 2500)
-texto_input = st.text_area("Paste English standards here (one per line):", height=300)
+# 4. INPUT Y CONTADOR POR LÍNEA
+texto_input = st.text_area("Paste English standards here (one per line):", height=300, placeholder="")
 
 if texto_input:
     lineas_reales = [l for l in texto_input.split('\n') if l.strip()]
@@ -73,16 +78,21 @@ if st.button("🚀 Run English Audit"):
     if not texto_input.strip():
         st.warning("Please paste some text first.")
     else:
-        # Normalización NFC para evitar errores de tildes/caracteres especiales
         texto_norm = unicodedata.normalize('NFC', texto_input)
         lineas = [l.strip() for l in texto_norm.split('\n') if l.strip()]
         
-        p_errors = 0 # Contador para Triage de Paralelismo
+        # --- NUEVA BARRA DE PROGRESO ---
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        p_errors = 0 
         
         for i, linea in enumerate(lineas, 1):
+            # Actualización de la barra y texto
+            progress_bar.progress(i / len(lineas))
+            status_text.text(f"Auditing line {i} of {len(lineas)}...")
+            
             if linea.lower().strip() == "hide details": continue
             
-            # RECUADRO AZUL: Show Details
             if "show details" in linea.lower():
                 st.info(f"Line {i} ℹ️ **'Show details' detected:** Please verify if there is hidden information in the source database.")
 
@@ -111,7 +121,7 @@ if st.button("🚀 Run English Audit"):
                     alertas.append(f"⚠️ **Academic Tone:** Avoid '{word}'. Use **{sug}** instead.")
                     to_highlight.append(word)
 
-            # --- API LANGUAGETOOL (US o UK) ---
+            # --- API LANGUAGETOOL ---
             lang_code = "en-US" if "US" in dialect else "en-GB"
             try:
                 res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea, 'language': lang_code}).json()
@@ -122,7 +132,6 @@ if st.button("🚀 Run English Audit"):
                     alertas.append(f"❌ **{m['rule']['category']['name']}:** {m['message']}")
             except: pass
 
-            # --- RENDERIZADO ---
             if alertas:
                 with st.expander(f"Line {i} ⚠️ Issues found", expanded=True):
                     st.markdown(f"<div>{highlight_errors(linea, to_highlight)}</div>", unsafe_allow_html=True)
@@ -130,7 +139,7 @@ if st.button("🚀 Run English Audit"):
             elif not "show details" in linea.lower():
                 st.success(f"Line {i} ✅ Perfect")
 
-        # ZENDESK-STYLE TRIAGE
+        status_text.text("Audit complete!")
         if p_errors > 3:
             st.markdown("---")
             st.markdown("<div class='complexity-badge'>🚩 High Complexity Review: Multiple parallelism issues detected.</div>", unsafe_allow_html=True)
