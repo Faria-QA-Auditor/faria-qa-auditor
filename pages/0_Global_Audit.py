@@ -72,7 +72,7 @@ st.markdown("<h2 style='color: #444;'>Global Languages Auditor</h2>", unsafe_all
 st.write("---")
 
 # 3. INPUT Y CONTADOR (2500 LÍNEAS)
-texto_raw = st.text_area("Paste mixed standards here:", height=350, placeholder="Supports different languages...")
+texto_raw = st.text_area("Paste your standards here:", height=350, placeholder="Supports different languages...")
 
 if texto_raw:
     texto_raw = unicodedata.normalize('NFC', texto_raw)
