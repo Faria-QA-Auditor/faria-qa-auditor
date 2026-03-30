@@ -38,7 +38,6 @@ if st.button("🚀 Run Global Audit"):
     if not texto_raw.strip():
         st.warning("Please paste some text.")
     else:
-        # NORMALIZACIÓN INICIAL
         texto_norm = normalize_text(texto_raw)
         lineas = [l.strip() for l in texto_norm.split('\n') if l.strip()]
         
@@ -48,22 +47,26 @@ if st.button("🚀 Run Global Audit"):
         for i, linea in enumerate(lineas, 1):
             linea_lower = linea.lower()
 
-            # --- CAPA 1: EXCEPCIONES CRÍTICAS (Heredadas de la Base de Datos) ---
+            # --- NUEVA REGLA: INTERCEPTOR DE BASE DE DATOS ---
             
-            # Si dice "Hide details", ignoramos la línea por completo (sin alertas)
+            # 1. Caso "Hide details": Silencio total, no es un error.
             if "hide details" in linea_lower:
                 continue
 
-            # Si dice "Show details", mostramos recuadro azul y SALTAMOS el resto del análisis
+            # 2. Caso "Show details": Recuadro azul informativo y saltar auditoría gramatical.
             if "show details" in linea_lower:
-                st.markdown(f"<div class='informativo'>Line {i} ℹ️ <b>Show details detected:</b> There is hidden information in this line. Please verify the integrity of the data in the source database.</div>", unsafe_allow_html=True)
-                # Opcional: mostrar traducción para contexto aunque sea un marcador
+                st.markdown(f"""
+                    <div class='informativo'>
+                        Line {i} ℹ️ <b>Show details detected:</b> There is hidden information in this line that was not fully expanded. 
+                        Please confirm if any content is missing from the source.
+                    </div>
+                """, unsafe_allow_html=True)
+                # Opcional: mostrar la traducción solo por si el resto de la línea tiene texto útil
                 st.markdown(f"<div class='translation-box'><b>English Context:</b> {translate_to_english(linea)}</div>", unsafe_allow_html=True)
-                continue # Esto evita que la API de LanguageTool lo marque como error
+                continue # IMPORTANTE: Aquí cortamos el análisis para esta línea.
 
-            # --- CAPA 2: AUDITORÍA DE IDIOMA ---
+            # --- CAPA 2: AUDITORÍA DE IDIOMA (Solo si no fue interceptada arriba) ---
             try:
-                # Detección y Auditoría
                 res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea, 'language': 'auto'}).json()
                 detected_lang = res.get('language', {}).get('code', 'en-US')[:2]
                 
@@ -71,20 +74,19 @@ if st.button("🚀 Run Global Audit"):
                 to_highlight = []
 
                 for m in res.get('matches', []):
-                    # Filtros de ruido
                     r_id = m['rule']['id']
+                    # Filtros de ruido conocidos
                     if any(x in r_id for x in ["FRENCH_WHITESPACE", "FR_PUNCTUATION", "WHITESPACE"]):
                         continue
                     
                     bad = normalize_text(linea[m['offset']:m['offset']+m['length']])
                     
-                    # Doble validación para no marcar fragmentos de "Show details" como error
-                    if bad.lower() in ["show", "details"] or len(bad) <= 1:
+                    # Ignorar si por alguna razón la API marca fragmentos de las palabras clave
+                    if bad.lower() in ["show", "details", "hide"] or len(bad) <= 1:
                         continue
                     
                     to_highlight.append(bad)
                     
-                    # Traducción de alertas al inglés (Smart Triage)
                     msg_low = m['message'].lower()
                     msg_en = "Grammar/Spelling issue"
                     if "accord" in msg_low or "concordancia" in msg_low: msg_en = "Agreement issue"
@@ -98,7 +100,7 @@ if st.button("🚀 Run Global Audit"):
                     with st.expander(f"Line {i} ⚠️ ({detected_lang.upper()})", expanded=True):
                         st.markdown(linea)
                         if detected_lang != 'en':
-                            st.markdown(f"<div class='translation-box'><b>English:</b> {translate_to_english(linea, detected_lang)}</div>", unsafe_allow_html=True)
+                            st.markdown(f"<div class='translation-box'><b>English Context:</b> {translate_to_english(linea, detected_lang)}</div>", unsafe_allow_html=True)
                         for a in alertas:
                             st.markdown(a, unsafe_allow_html=True)
                 else:
