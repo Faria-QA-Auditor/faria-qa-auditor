@@ -52,7 +52,7 @@ with col1:
     st.markdown("""
     * **Smart Triage:** Instant categorization of issues (Critical, Warning, Info).
     * **NFC Shield:** Automatic fixing of invisible character encoding errors.
-    * **Database Markers:** Native detection of <i>'Show/Hide details'</i> to prevent data loss.
+    * **Database Markers:**
     * **Pedagogical Guard:** Verification of infinitive verbs (Bloom's Taxonomy) in objectives.
     """)
 
@@ -60,7 +60,7 @@ with col2:
     st.markdown("### 🛠️ Quick Start Guide")
     st.info("""
     1.  **Navigate:** Use the **Sidebar** on the left to select the specific language auditor or the 'Global Mixed' mode.
-    2.  **Input:** Paste your raw data from Atlas, ManageBac, or Pamoja.
+    2.  **Input:** Paste your raw data.
     3.  **Process:** Click the 'Run Audit' button.
     4.  **Review:** Examine the yellow warnings for errors or the **blue boxes** for missing information.
     """)
