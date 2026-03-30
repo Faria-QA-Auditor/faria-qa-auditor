@@ -6,7 +6,7 @@ import unicodedata
 # 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(page_title="Spanish Standards Auditor", page_icon="🇪🇸", layout="centered")
 
-# --- CSS PERSONALIZADO (Incluye Barra de Progreso Morada) ---
+# --- CSS PERSONALIZADO ---
 st.markdown("""
     <style>
     .stButton>button {
@@ -18,7 +18,6 @@ st.markdown("""
         font-weight: bold;
         border: none;
     }
-    /* Barra de Progreso Morada */
     .stProgress > div > div > div > div {
         background-color: #4a148c;
     }
@@ -28,6 +27,16 @@ st.markdown("""
         padding: 10px;
         margin: 10px 0;
         font-style: italic;
+    }
+    /* Estilo para el Recuadro Azul de Base de Datos */
+    .db-info-box {
+        background-color: #e3f2fd;
+        border-left: 5px solid #2196f3;
+        padding: 15px;
+        color: #0c5460;
+        margin: 10px 0;
+        border-radius: 4px;
+        font-weight: 500;
     }
     .highlight {
         background-color: #fff3cd;
@@ -55,7 +64,7 @@ def highlight_errors(text, words):
             highlighted = re.sub(f"({re.escape(word)})", r"<span class='highlight'>\1</span>", highlighted)
     return highlighted
 
-# 2. HEADER (Logo e Identidad)
+# 2. HEADER
 st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
 try:
     st.image("logo.jpg", width=250)
@@ -64,7 +73,7 @@ except:
 st.markdown("<h2 style='color: #444;'>Spanish Standards Auditor</h2>", unsafe_allow_html=True)
 st.write("---")
 
-# 3. INPUT Y CONTADOR DE LÍNEAS (Actualizado a 2500)
+# 3. INPUT Y CONTADOR (2500 Líneas)
 texto_input = st.text_area("Paste Spanish standards here:", height=300, placeholder="")
 
 if texto_input:
@@ -72,10 +81,10 @@ if texto_input:
     total_lines = len(lineas_reales)
     st.markdown(f"**Line Count:** {total_lines} / 2500")
     if total_lines > 2500:
-        st.error("⚠️ **Warning:** Document exceeds the 2,500-line limit. Please audit in smaller batches.")
+        st.error("⚠️ **Warning:** Document exceeds the 2,500-line limit.")
     st.write("---")
 
-# 4. LÓGICA DE AUDITORÍA
+# 4. PROCESAMIENTO
 if st.button("🚀 Run Spanish Audit"):
     if not texto_input.strip():
         st.warning("Please paste some text.")
@@ -83,59 +92,58 @@ if st.button("🚀 Run Spanish Audit"):
         texto_norm = unicodedata.normalize('NFC', texto_input)
         lineas = [l.strip() for l in texto_norm.split('\n') if l.strip()]
 
-        # --- BARRA DE PROGRESO ---
         progress_bar = st.progress(0)
         status_text = st.empty()
 
         for i, linea in enumerate(lineas, 1):
-            # Actualización visual del progreso
             progress_bar.progress(i / len(lineas))
             status_text.text(f"Auditing line {i} of {len(lineas)}...")
 
-            if linea.lower().strip() == "hide details": continue
-            
-            if "show details" in linea.lower():
-                st.info(f"Line {i} ℹ️ **'Show details' detected:** Please verify if there is hidden information in the source database.")
+            linea_lower = linea.lower().strip()
+
+            # --- REGLA: HIDE DETAILS (Ignorar por completo) ---
+            if "hide details" in linea_lower:
+                continue
+
+            # --- REGLA: SHOW DETAILS (Recuadro Azul e Interrumpir Auditoría) ---
+            if "show details" in linea_lower:
+                st.markdown(f"""
+                    <div class='db-info-box'>
+                        Line {i} ℹ️ <b>'Show details' detected:</b> There is hidden information in this line that was not fully expanded. 
+                        Please verify the missing content in the source database.
+                    </div>
+                """, unsafe_allow_html=True)
+                continue
 
             alertas = []
             to_highlight = []
 
-            # --- REGLA 1: Estilo y Voz Pasiva ---
+            # --- REGLAS MANUALES ---
             if re.search(r'\b(es|son|fue|fueron)\b\s+\w+(ado|ido|ada|ida)\b', linea, re.I):
                 alertas.append("⚠️ **Style Suggestion:** Passive voice detected. Consider using 'pasiva refleja' (e.g., 'se realiza').")
-
-            # --- REGLA 2: Cifras y Símbolos ---
             if re.search(r'\d+%', linea):
                 alertas.append("❌ **Punctuation Error:** Missing space before % (e.g., '10 %').")
                 to_highlight.append(re.search(r'\d+%', linea).group())
-            if re.search(r'\d+°C', linea):
-                alertas.append("❌ **Punctuation Error:** Missing space before °C (e.g., '18 °C').")
-                to_highlight.append(re.search(r'\d+°C', linea).group())
 
-            # --- REGLA 3: Prefijos ---
-            prefijos_error = re.findall(r'\b(pre|ex|sub|post|vice)\b\s+', linea, re.I)
-            if prefijos_error:
-                alertas.append("❌ **Grammar Error:** Prefixes should be joined (e.g., 'preescolar').")
-
-            # --- REGLA 4: Mayúsculas tildadas ---
-            if re.search(r'\b[A-ZÁÉÍÓÚÑ]{2,}\b', linea):
-                if "ACION " in linea or "UCACION " in linea:
-                     alertas.append("⚠️ **Orthography:** Ensure all-caps words maintain accents (EDUCACIÓN).")
-
-            # --- API LANGUAGETOOL ---
+            # --- API LANGUAGETOOL (Traducción de Alertas) ---
             try:
                 res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea, 'language': 'es'}).json()
                 for m in res.get('matches', []):
                     bad = linea[m['offset']:m['offset']+m['length']]
+                    # Doble validación para no marcar palabras de la DB
                     if bad.lower() in ["show", "details", "hide"]: continue
                     
                     to_highlight.append(bad)
-                    msg = m['message']
-                    if "ortografía" in msg.lower(): msg = "Possible spelling error"
-                    if "gramática" in msg.lower(): msg = "Grammatical issue"
+                    
+                    # Mapeo a Inglés
+                    msg_orig = m['message'].lower()
+                    if "ortografía" in msg_orig or "spelling" in msg_orig: msg_en = "Spelling error"
+                    elif "gramática" in msg_orig or "grammar" in msg_orig: msg_en = "Grammatical issue"
+                    elif "concordancia" in msg_orig or "agreement" in msg_orig: msg_en = "Agreement issue"
+                    else: msg_en = "Linguistic issue"
                     
                     sug = f" (Try: **{m['replacements'][0]['value']}**)" if m['replacements'] else ""
-                    alertas.append(f"❌ **{msg}:** Issue in '{bad}'.{sug}")
+                    alertas.append(f"❌ **{msg_en}:** Issue in '{bad}'.{sug}")
             except: pass
 
             if alertas:
@@ -143,7 +151,7 @@ if st.button("🚀 Run Spanish Audit"):
                     st.markdown(f"<div>{highlight_errors(linea, to_highlight)}</div>", unsafe_allow_html=True)
                     st.markdown(f"<div class='translation-box'><b>English Context:</b> {translate_to_english(linea)}</div>", unsafe_allow_html=True)
                     for a in alertas: st.write(a)
-            elif not "show details" in linea.lower():
+            else:
                 st.success(f"Line {i} ✅ Perfect")
         
         status_text.text("Audit complete!")
