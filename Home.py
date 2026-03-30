@@ -45,8 +45,6 @@ with col1:
         <p>Developed specifically for the <b>Standards and Services Team</b>, this auditor automates 
         the detection of formatting, spelling, and structural issues in educational standards 
         across our global databases.</p>
-        <p>By leveraging <b>NFC Normalization</b> and professional linguistic APIs, we ensure 
-        that every line of data is clean, consistent, and ready for production.</p>
     </div>
     """, unsafe_allow_html=True)
     
