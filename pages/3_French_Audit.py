@@ -9,6 +9,8 @@ st.set_page_config(page_title="French Standards Auditor", page_icon="🇫🇷", 
 st.markdown("""
     <style>
     .stButton>button { width: 100%; border-radius: 12px; height: 3em; background-color: #4a148c; color: white; font-weight: bold; }
+    /* Barra de Progreso Morada */
+    .stProgress > div > div > div > div { background-color: #4a148c; }
     .translation-box { background-color: #f0f2f6; border-left: 5px solid #4a148c; padding: 12px; margin: 10px 0; font-style: italic; border-radius: 0 8px 8px 0; }
     .highlight { background-color: #fff3cd; font-weight: bold; color: #d9534f; text-decoration: underline; padding: 0 2px; }
     </style>
@@ -39,11 +41,15 @@ except: st.title("FARIA EDUCATION GROUP")
 st.markdown("<h2 style='color: #444;'>French Standards Auditor</h2>", unsafe_allow_html=True)
 st.write("---")
 
-texto_raw = st.text_area("Paste French standards here:", height=300)
+# 3. INPUT Y CONTADOR (Actualizado a 2500)
+texto_raw = st.text_area("Paste French standards here:", height=300, placeholder="")
 
 if texto_raw:
     lineas_reales = [l for l in texto_raw.split('\n') if l.strip()]
-    st.markdown(f"**Line Count:** {len(lineas_reales)} / 1000")
+    total_lines = len(lineas_reales)
+    st.markdown(f"**Line Count:** {total_lines} / 2500")
+    if total_lines > 2500:
+        st.error("⚠️ **Warning:** Document exceeds the 2,500-line limit.")
 
 if st.button("🚀 Run French Audit"):
     if not texto_raw.strip():
@@ -53,7 +59,15 @@ if st.button("🚀 Run French Audit"):
         texto_norm = unicodedata.normalize('NFC', texto_raw)
         lineas = [l.strip() for l in texto_norm.split('\n') if l.strip()]
 
+        # --- BARRA DE PROGRESO ---
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+
         for i, linea in enumerate(lineas, 1):
+            # Actualización visual
+            progress_bar.progress(i / len(lineas))
+            status_text.text(f"Auditing line {i} of {len(lineas)}...")
+
             linea_lower = linea.lower().strip()
             
             if "hide details" in linea_lower: continue
@@ -78,13 +92,13 @@ if st.button("🚀 Run French Audit"):
 
                     bad = unicodedata.normalize('NFC', linea[m['offset']:m['offset']+m['length']])
                     
-                    # Ignorar meta-tags y letras solas (Arregla imagen 0ed38d)
-                    if bad.lower() in ["show", "details", "show details"] or len(bad) <= 1:
+                    # Ignorar meta-tags y letras solas
+                    if bad.lower() in ["show", "details", "show details", "hide"] or len(bad) <= 1:
                         continue
                     
                     to_highlight.append(bad)
                     
-                    # Traducción de alertas al inglés
+                    # Traducción de alertas al inglés (Mapeo)
                     msg_fr = m['message'].lower()
                     msg_en = "Grammar/Spelling issue"
                     if "accord" in msg_fr: msg_en = "Grammatical agreement"
@@ -98,13 +112,14 @@ if st.button("🚀 Run French Audit"):
             if alertas:
                 with st.expander(f"Line {i} ⚠️ Issues found", expanded=True):
                     st.markdown(f"<div>{highlight_errors(linea, to_highlight)}</div>", unsafe_allow_html=True)
-                    # Traducción siempre presente para el equipo
                     st.markdown(f"<div class='translation-box'><b>English Context:</b> {translate_to_english(linea)}</div>", unsafe_allow_html=True)
                     for a in alertas: st.write(a)
             elif "show details" in linea_lower:
                 st.markdown(f"<div class='translation-box'><b>English Context:</b> {translate_to_english(linea)}</div>", unsafe_allow_html=True)
             elif not show_detected:
                 st.success(f"Line {i} ✅ Perfect")
+        
+        status_text.text("Audit complete!")
 
 st.write("---")
 st.caption("Standards and Services Team | Faria Education Group")
