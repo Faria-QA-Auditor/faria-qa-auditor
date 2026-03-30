@@ -57,15 +57,15 @@ st.write("---")
 dialect = st.radio("Select Regional Standard:", ["US (American English)", "UK (British English)"], horizontal=True)
 st.info(f"Targeting: **{dialect}** rules and spelling conventions.")
 
-# 4. INPUT Y CONTADOR POR LÍNEA
+# 4. INPUT Y CONTADOR POR LÍNEA (Actualizado a 2500)
 texto_input = st.text_area("Paste English standards here (one per line):", height=300)
 
 if texto_input:
     lineas_reales = [l for l in texto_input.split('\n') if l.strip()]
     total_lines = len(lineas_reales)
-    st.markdown(f"**Line Count:** {total_lines} / 1000")
-    if total_lines > 1000:
-        st.error("⚠️ **Warning:** Document exceeds the 1,000-line limit.")
+    st.markdown(f"**Line Count:** {total_lines} / 2500")
+    if total_lines > 2500:
+        st.error("⚠️ **Warning:** Document exceeds the 2,500-line limit.")
     st.write("---")
 
 # 5. PROCESAMIENTO
@@ -117,7 +117,7 @@ if st.button("🚀 Run English Audit"):
                 res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea, 'language': lang_code}).json()
                 for m in res.get('matches', []):
                     bad = linea[m['offset']:m['offset']+m['length']]
-                    if bad.lower() in ["show details", "hide details"]: continue
+                    if bad.lower() in ["show", "details", "hide"]: continue
                     to_highlight.append(bad)
                     alertas.append(f"❌ **{m['rule']['category']['name']}:** {m['message']}")
             except: pass
