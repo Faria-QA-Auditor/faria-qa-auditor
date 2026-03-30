@@ -52,7 +52,7 @@ with col1:
     st.markdown("""
     * **Smart Triage:** Instant categorization of issues (Critical, Warning, Info).
     * **NFC Shield:** Automatic fixing of invisible character encoding errors.
-    * **Database Markers:**
+    * **Database Markers**
     * **Pedagogical Guard:** Verification of infinitive verbs (Bloom's Taxonomy) in objectives.
     """)
 
