@@ -31,7 +31,7 @@ except:
 st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown("<div class='main-title'>Standards Quality Assurance (QA) Auditor</div>", unsafe_allow_html=True)
-st.markdown("<div class='sub-title'>Advanced Data Scrubbing & Linguistic Validation Suite</div>", unsafe_allow_html=True)
+st.markdown("<div class='sub-title'>Advanced Standards QA tool</div>", unsafe_allow_html=True)
 
 st.write("---")
 
