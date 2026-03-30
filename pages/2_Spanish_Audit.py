@@ -6,7 +6,7 @@ import unicodedata
 # 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(page_title="Spanish Standards Auditor", page_icon="🇪🇸", layout="centered")
 
-# --- CSS PERSONALIZADO (Mantiene estética Faria) ---
+# --- CSS PERSONALIZADO (Incluye Barra de Progreso Morada) ---
 st.markdown("""
     <style>
     .stButton>button {
@@ -17,6 +17,10 @@ st.markdown("""
         color: white;
         font-weight: bold;
         border: none;
+    }
+    /* Barra de Progreso Morada */
+    .stProgress > div > div > div > div {
+        background-color: #4a148c;
     }
     .translation-box {
         background-color: #f0f2f6;
@@ -60,16 +64,15 @@ except:
 st.markdown("<h2 style='color: #444;'>Spanish Standards Auditor</h2>", unsafe_allow_html=True)
 st.write("---")
 
-# 3. INPUT Y CONTADOR DE LÍNEAS
-texto_input = st.text_area("Paste Spanish standards here:", height=300)
+# 3. INPUT Y CONTADOR DE LÍNEAS (Actualizado a 2500)
+texto_input = st.text_area("Paste Spanish standards here:", height=300, placeholder="")
 
 if texto_input:
-    # Contamos líneas reales (párrafos/líneas escritas)
     lineas_reales = [l for l in texto_input.split('\n') if l.strip()]
     total_lines = len(lineas_reales)
-    st.markdown(f"**Line Count:** {total_lines} / 1000")
-    if total_lines > 1000:
-        st.error("⚠️ **Warning:** Document exceeds the 1,000-line limit. Please audit in smaller batches.")
+    st.markdown(f"**Line Count:** {total_lines} / 2500")
+    if total_lines > 2500:
+        st.error("⚠️ **Warning:** Document exceeds the 2,500-line limit. Please audit in smaller batches.")
     st.write("---")
 
 # 4. LÓGICA DE AUDITORÍA
@@ -77,51 +80,56 @@ if st.button("🚀 Run Spanish Audit"):
     if not texto_input.strip():
         st.warning("Please paste some text.")
     else:
-        # NORMALIZACIÓN NFC (Arregla el conflicto de tildes/encoding)
         texto_norm = unicodedata.normalize('NFC', texto_input)
         lineas = [l.strip() for l in texto_norm.split('\n') if l.strip()]
 
+        # --- BARRA DE PROGRESO ---
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+
         for i, linea in enumerate(lineas, 1):
+            # Actualización visual del progreso
+            progress_bar.progress(i / len(lineas))
+            status_text.text(f"Auditing line {i} of {len(lineas)}...")
+
             if linea.lower().strip() == "hide details": continue
             
-            # RECUADRO AZUL: Show Details
             if "show details" in linea.lower():
-                st.info(f"Line {i} ℹ️ **'Show details' detected:** Please verify if there is hidden information in the source database that needs to be expanded.")
+                st.info(f"Line {i} ℹ️ **'Show details' detected:** Please verify if there is hidden information in the source database.")
 
             alertas = []
             to_highlight = []
 
             # --- REGLA 1: Estilo y Voz Pasiva ---
             if re.search(r'\b(es|son|fue|fueron)\b\s+\w+(ado|ido|ada|ida)\b', linea, re.I):
-                alertas.append("⚠️ **Style Suggestion:** Passive voice detected ('is/are realized'). Consider using 'pasiva refleja' (e.g., 'se realiza') for better flow.")
+                alertas.append("⚠️ **Style Suggestion:** Passive voice detected. Consider using 'pasiva refleja' (e.g., 'se realiza').")
 
-            # --- REGLA 2: Cifras y Símbolos (Espacio en % y °C) ---
+            # --- REGLA 2: Cifras y Símbolos ---
             if re.search(r'\d+%', linea):
-                alertas.append("❌ **Punctuation Error:** Missing space between number and percentage (e.g., '10 %').")
+                alertas.append("❌ **Punctuation Error:** Missing space before % (e.g., '10 %').")
                 to_highlight.append(re.search(r'\d+%', linea).group())
             if re.search(r'\d+°C', linea):
-                alertas.append("❌ **Punctuation Error:** Missing space between number and Celsius symbol (e.g., '18 °C').")
+                alertas.append("❌ **Punctuation Error:** Missing space before °C (e.g., '18 °C').")
                 to_highlight.append(re.search(r'\d+°C', linea).group())
 
-            # --- REGLA 3: Prefijos unidos ---
+            # --- REGLA 3: Prefijos ---
             prefijos_error = re.findall(r'\b(pre|ex|sub|post|vice)\b\s+', linea, re.I)
             if prefijos_error:
-                alertas.append("❌ **Grammar Error:** Prefixes should be joined to the base word (e.g., 'preescolar', not 'pre escolar').")
+                alertas.append("❌ **Grammar Error:** Prefixes should be joined (e.g., 'preescolar').")
 
-            # --- REGLA 4: Mayúsculas tildadas (Check básico) ---
+            # --- REGLA 4: Mayúsculas tildadas ---
             if re.search(r'\b[A-ZÁÉÍÓÚÑ]{2,}\b', linea):
-                if "ACION " in linea or "UCACION " in linea: # Ejemplo común
-                     alertas.append("⚠️ **Orthography:** Ensure all-caps words maintain their accents (e.g., EDUCACIÓN).")
+                if "ACION " in linea or "UCACION " in linea:
+                     alertas.append("⚠️ **Orthography:** Ensure all-caps words maintain accents (EDUCACIÓN).")
 
-            # --- API LANGUAGETOOL (Ortografía y Gramática RAE) ---
+            # --- API LANGUAGETOOL ---
             try:
                 res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea, 'language': 'es'}).json()
                 for m in res.get('matches', []):
                     bad = linea[m['offset']:m['offset']+m['length']]
-                    if bad.lower() in ["show details", "hide details"]: continue
+                    if bad.lower() in ["show", "details", "hide"]: continue
                     
                     to_highlight.append(bad)
-                    # Traducción de mensajes de la API al vuelo
                     msg = m['message']
                     if "ortografía" in msg.lower(): msg = "Possible spelling error"
                     if "gramática" in msg.lower(): msg = "Grammatical issue"
@@ -130,7 +138,6 @@ if st.button("🚀 Run Spanish Audit"):
                     alertas.append(f"❌ **{msg}:** Issue in '{bad}'.{sug}")
             except: pass
 
-            # --- RENDERIZADO FINAL ---
             if alertas:
                 with st.expander(f"Line {i} ⚠️ Issues found", expanded=True):
                     st.markdown(f"<div>{highlight_errors(linea, to_highlight)}</div>", unsafe_allow_html=True)
@@ -138,6 +145,8 @@ if st.button("🚀 Run Spanish Audit"):
                     for a in alertas: st.write(a)
             elif not "show details" in linea.lower():
                 st.success(f"Line {i} ✅ Perfect")
+        
+        status_text.text("Audit complete!")
 
 st.write("---")
 st.caption("Standards and Services Team | Faria Education Group")
