@@ -4,7 +4,7 @@ import re
 import unicodedata
 
 # 1. CONFIGURACIÓN DE PÁGINA
-st.set_page_config(page_title="Global Mixed Auditor", page_icon="🌍", layout="centered")
+st.set_page_config(page_title="Global Languages Auditor", page_icon="🌍", layout="centered")
 
 # --- CSS CORPORATIVO FARIA (FUCSIA) ---
 st.markdown("""
@@ -68,11 +68,11 @@ try:
     st.image("logo.jpg", width=250)
 except: 
     st.title("FARIA EDUCATION GROUP")
-st.markdown("<h2 style='color: #444;'>Global Mixed Standards Auditor</h2>", unsafe_allow_html=True)
+st.markdown("<h2 style='color: #444;'>Global Languages Auditor</h2>", unsafe_allow_html=True)
 st.write("---")
 
 # 3. INPUT Y CONTADOR (2500 LÍNEAS)
-texto_raw = st.text_area("Paste mixed standards here:", height=350, placeholder="Supports Spanish, French, Arabic, Turkish, English...")
+texto_raw = st.text_area("Paste mixed standards here:", height=350, placeholder="Supports different languages...")
 
 if texto_raw:
     texto_raw = unicodedata.normalize('NFC', texto_raw)
