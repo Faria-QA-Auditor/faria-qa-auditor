@@ -30,7 +30,7 @@ except:
     st.markdown("<h1 style='color: #1a237e; font-family: sans-serif;'>FARIA EDUCATION GROUP</h1>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
-st.markdown("<div class='main-title'>Global Standards Auditor</div>", unsafe_allow_html=True)
+st.markdown("<div class='main-title'>Standards Quality Assurance (QA) Auditor</div>", unsafe_allow_html=True)
 st.markdown("<div class='sub-title'>Advanced Data Scrubbing & Linguistic Validation Suite</div>", unsafe_allow_html=True)
 
 st.write("---")
