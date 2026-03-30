@@ -1,113 +1,74 @@
 import streamlit as st
-import requests
-import re
-import unicodedata
 
-# 1. CONFIGURACIÓN
-st.set_page_config(page_title="Global Mixed Auditor", page_icon="🌎", layout="wide")
+# 1. CONFIGURACIÓN DE PÁGINA
+st.set_page_config(page_title="Faria Global Auditor", page_icon="🌎", layout="wide")
 
+# --- CSS PARA EL LOOK & FEEL PROFESIONAL ---
 st.markdown("""
     <style>
-    .stButton>button { width: 100%; border-radius: 8px; height: 3em; background-color: #1a237e; color: white; font-weight: bold; }
-    .translation-box { background-color: #f8f9fa; border-left: 5px solid #1a237e; padding: 12px; margin: 10px 0; font-style: italic; border-radius: 4px; }
-    .highlight { background-color: #fff3cd; font-weight: bold; color: #d9534f; text-decoration: underline; padding: 0 2px; }
-    /* Smart Triage: Recuadro Azul */
-    .informativo { background-color: #e3f2fd; border-left: 5px solid #2196f3; padding: 15px; color: #0c5460; margin: 10px 0; border-radius: 4px; font-weight: 500; }
-    .advertencia { background-color: #fff4e0; border-left: 5px solid #ffa500; padding: 10px; color: #856404; margin-bottom: 5px; border-radius: 4px; }
+    .main-title { color: #1a237e; font-size: 3em; font-weight: bold; text-align: center; margin-bottom: 5px; }
+    .sub-title { color: #444; font-size: 1.5em; text-align: center; margin-top: 0px; margin-bottom: 30px; }
+    .feature-card { 
+        background-color: #f8f9fa; 
+        border-radius: 10px; 
+        padding: 25px; 
+        border-left: 8px solid #1a237e; 
+        margin-bottom: 20px;
+        box-shadow: 2px 2px 10px rgba(0,0,0,0.05);
+    }
+    h3 { color: #1a237e; margin-top: 0; }
+    .stAlert { border-radius: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- FUNCIONES CORE ---
-def normalize_text(text):
-    return unicodedata.normalize('NFC', text)
+# 2. HEADER
+st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
+# Intentamos cargar el logo, si no, ponemos el nombre en grande
+try:
+    st.image("logo.jpg", width=350)
+except:
+    st.markdown("<h1 style='color: #1a237e; font-family: sans-serif;'>FARIA EDUCATION GROUP</h1>", unsafe_allow_html=True)
+st.markdown("</div>", unsafe_allow_html=True)
 
-def translate_to_english(text, lang='auto'):
-    try:
-        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl={lang}&tl=en&dt=t&q={requests.utils.quote(text)}"
-        res = requests.get(url, timeout=5).json()
-        return res[0][0][0]
-    except: return "[Translation N/A]"
-
-# 2. INTERFAZ
-st.title("🌎 Global Mixed Standards Auditor")
-st.write("This tool automatically detects the language of each line and applies the corresponding scrub rules.")
-
-texto_raw = st.text_area("Paste mixed standards here:", height=300)
-
-if st.button("🚀 Run Global Audit"):
-    if not texto_raw.strip():
-        st.warning("Please paste some text.")
-    else:
-        texto_norm = normalize_text(texto_raw)
-        lineas = [l.strip() for l in texto_norm.split('\n') if l.strip()]
-        
-        st.write(f"**Line Count:** {len(lineas)} / 1000")
-        st.write("---")
-
-        for i, linea in enumerate(lineas, 1):
-            linea_lower = linea.lower()
-
-            # --- NUEVA REGLA: INTERCEPTOR DE BASE DE DATOS ---
-            
-            # 1. Caso "Hide details": Silencio total, no es un error.
-            if "hide details" in linea_lower:
-                continue
-
-            # 2. Caso "Show details": Recuadro azul informativo y saltar auditoría gramatical.
-            if "show details" in linea_lower:
-                st.markdown(f"""
-                    <div class='informativo'>
-                        Line {i} ℹ️ <b>Show details detected:</b> There is hidden information in this line that was not fully expanded. 
-                        Please confirm if any content is missing from the source.
-                    </div>
-                """, unsafe_allow_html=True)
-                # Opcional: mostrar la traducción solo por si el resto de la línea tiene texto útil
-                st.markdown(f"<div class='translation-box'><b>English Context:</b> {translate_to_english(linea)}</div>", unsafe_allow_html=True)
-                continue # IMPORTANTE: Aquí cortamos el análisis para esta línea.
-
-            # --- CAPA 2: AUDITORÍA DE IDIOMA (Solo si no fue interceptada arriba) ---
-            try:
-                res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea, 'language': 'auto'}).json()
-                detected_lang = res.get('language', {}).get('code', 'en-US')[:2]
-                
-                alertas = []
-                to_highlight = []
-
-                for m in res.get('matches', []):
-                    r_id = m['rule']['id']
-                    # Filtros de ruido conocidos
-                    if any(x in r_id for x in ["FRENCH_WHITESPACE", "FR_PUNCTUATION", "WHITESPACE"]):
-                        continue
-                    
-                    bad = normalize_text(linea[m['offset']:m['offset']+m['length']])
-                    
-                    # Ignorar si por alguna razón la API marca fragmentos de las palabras clave
-                    if bad.lower() in ["show", "details", "hide"] or len(bad) <= 1:
-                        continue
-                    
-                    to_highlight.append(bad)
-                    
-                    msg_low = m['message'].lower()
-                    msg_en = "Grammar/Spelling issue"
-                    if "accord" in msg_low or "concordancia" in msg_low: msg_en = "Agreement issue"
-                    elif "orthographe" in msg_low or "ortografía" in msg_low: msg_en = "Spelling error"
-                    
-                    sug = f" (Try: <b>{m['replacements'][0]['value']}</b>)" if m['replacements'] else ""
-                    alertas.append(f"<div class='advertencia'>🟡 <b>{msg_en}:</b> Issue in '{bad}'.{sug}</div>")
-
-                # --- RENDERIZADO DE RESULTADOS ---
-                if alertas:
-                    with st.expander(f"Line {i} ⚠️ ({detected_lang.upper()})", expanded=True):
-                        st.markdown(linea)
-                        if detected_lang != 'en':
-                            st.markdown(f"<div class='translation-box'><b>English Context:</b> {translate_to_english(linea, detected_lang)}</div>", unsafe_allow_html=True)
-                        for a in alertas:
-                            st.markdown(a, unsafe_allow_html=True)
-                else:
-                    st.success(f"Line {i} ✅ Perfect ({detected_lang.upper()})")
-
-            except Exception as e:
-                st.error(f"Line {i}: Error connecting to the Audit API.")
+st.markdown("<div class='main-title'>Global Standards Auditor</div>", unsafe_allow_html=True)
+st.markdown("<div class='sub-title'>Advanced Data Scrubbing & Linguistic Validation Suite</div>", unsafe_allow_html=True)
 
 st.write("---")
-st.caption("Standards and Services Team | Faria Education Group | 2026")
+
+# 3. CONTENIDO PRINCIPAL
+col1, col2 = st.columns([1, 1], gap="large")
+
+with col1:
+    st.markdown("""
+    <div class='feature-card'>
+        <h3>📝 Project Purpose</h3>
+        <p>Developed specifically for the <b>Standards and Services Team</b>, this auditor automates 
+        the detection of formatting, spelling, and structural issues in educational standards 
+        across our global databases.</p>
+        <p>By leveraging <b>NFC Normalization</b> and professional linguistic APIs, we ensure 
+        that every line of data is clean, consistent, and ready for production.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("### 🚀 Core Capabilities")
+    st.markdown("""
+    * **Smart Triage:** Instant categorization of issues (Critical, Warning, Info).
+    * **NFC Shield:** Automatic fixing of invisible character encoding errors.
+    * **Database Markers:** Native detection of <i>'Show/Hide details'</i> to prevent data loss.
+    * **Pedagogical Guard:** Verification of infinitive verbs (Bloom's Taxonomy) in objectives.
+    """)
+
+with col2:
+    st.markdown("### 🛠️ Quick Start Guide")
+    st.info("""
+    1.  **Navigate:** Use the **Sidebar** on the left to select the specific language auditor or the 'Global Mixed' mode.
+    2.  **Input:** Paste your raw data from Atlas, ManageBac, or Pamoja.
+    3.  **Process:** Click the 'Run Audit' button.
+    4.  **Review:** Examine the yellow warnings for errors or the **blue boxes** for missing information.
+    """)
+    
+    st.markdown("### 🌍 Linguistic Scope")
+    st.success("English • Spanish • French • Arabic • Turkish • Mixed Mode")
+
+st.write("---")
+st.markdown("<div style='text-align: center; color: #888;'>Standards and Services | Faria Education Group | 2026</div>", unsafe_allow_html=True)
