@@ -97,7 +97,7 @@ if texto_input:
     st.write("---")
 
 # 4. PROCESAMIENTO
-if st.button("🚀 Run Specialized Audit"):
+if st.button("🚀 Run Arabic Audit"):
     if not texto_input.strip():
         st.warning("Please paste some text first.")
     else:
