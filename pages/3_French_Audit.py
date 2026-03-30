@@ -12,6 +12,16 @@ st.markdown("""
     /* Barra de Progreso Morada */
     .stProgress > div > div > div > div { background-color: #4a148c; }
     .translation-box { background-color: #f0f2f6; border-left: 5px solid #4a148c; padding: 12px; margin: 10px 0; font-style: italic; border-radius: 0 8px 8px 0; }
+    /* Estilo para el Recuadro Azul de Base de Datos */
+    .db-info-box {
+        background-color: #e3f2fd;
+        border-left: 5px solid #2196f3;
+        padding: 15px;
+        color: #0c5460;
+        margin: 10px 0;
+        border-radius: 4px;
+        font-weight: 500;
+    }
     .highlight { background-color: #fff3cd; font-weight: bold; color: #d9534f; text-decoration: underline; padding: 0 2px; }
     </style>
     """, unsafe_allow_html=True)
@@ -41,7 +51,7 @@ except: st.title("FARIA EDUCATION GROUP")
 st.markdown("<h2 style='color: #444;'>French Standards Auditor</h2>", unsafe_allow_html=True)
 st.write("---")
 
-# 3. INPUT Y CONTADOR (Actualizado a 2500)
+# 3. INPUT Y CONTADOR (2500 Líneas)
 texto_raw = st.text_area("Paste French standards here:", height=300, placeholder="")
 
 if texto_raw:
@@ -55,7 +65,6 @@ if st.button("🚀 Run French Audit"):
     if not texto_raw.strip():
         st.warning("Please paste some text.")
     else:
-        # NORMALIZACIÓN NFC: Crucial para que reconozca los acentos (é, à, ç, ê)
         texto_norm = unicodedata.normalize('NFC', texto_raw)
         lineas = [l.strip() for l in texto_norm.split('\n') if l.strip()]
 
@@ -64,41 +73,44 @@ if st.button("🚀 Run French Audit"):
         status_text = st.empty()
 
         for i, linea in enumerate(lineas, 1):
-            # Actualización visual
             progress_bar.progress(i / len(lineas))
             status_text.text(f"Auditing line {i} of {len(lineas)}...")
 
             linea_lower = linea.lower().strip()
             
+            # HIDE DETAILS: Ignorar
             if "hide details" in linea_lower: continue
 
-            # REGLA AZUL PRIORITARIA
-            show_detected = False
+            # SHOW DETAILS: Recuadro Azul y saltar auditoría
             if "show details" in linea_lower:
-                st.info(f"Line {i} ℹ️ **'Show details' detected:** There is hidden information in this line. Check source database.")
-                show_detected = True
+                st.markdown(f"""
+                    <div class='db-info-box'>
+                        Line {i} ℹ️ <b>'Show details' detected:</b> There is hidden information in this line. 
+                        Please verify the source database content.
+                    </div>
+                """, unsafe_allow_html=True)
+                continue
 
             alertas = []
             to_highlight = []
 
             try:
-                # Forzamos idioma francés para evitar errores de diccionario
                 res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea, 'language': 'fr'}).json()
                 for m in res.get('matches', []):
-                    # SILENCIAMOS SOLO EL ESPACIO ANTES DE PUNTUACIÓN DOBLE
                     r_id = m.get('rule', {}).get('id', '')
-                    if any(x in r_id for x in ["FRENCH_WHITESPACE", "FR_PUNCTUATION"]):
+                    
+                    # FILTROS CRUCIALES: Ignorar puntuación francesa, capitalización y sugerencias morfológicas erróneas (de/d')
+                    if any(x in r_id for x in ["FRENCH_WHITESPACE", "FR_PUNCTUATION", "UPPERCASE_SENTENCE_START", "MORFOLOGIK_RULE_FR_FR"]):
                         continue
 
                     bad = unicodedata.normalize('NFC', linea[m['offset']:m['offset']+m['length']])
                     
-                    # Ignorar meta-tags y letras solas
                     if bad.lower() in ["show", "details", "show details", "hide"] or len(bad) <= 1:
                         continue
                     
                     to_highlight.append(bad)
                     
-                    # Traducción de alertas al inglés (Mapeo)
+                    # Traducción de alertas
                     msg_fr = m['message'].lower()
                     msg_en = "Grammar/Spelling issue"
                     if "accord" in msg_fr: msg_en = "Grammatical agreement"
@@ -114,9 +126,7 @@ if st.button("🚀 Run French Audit"):
                     st.markdown(f"<div>{highlight_errors(linea, to_highlight)}</div>", unsafe_allow_html=True)
                     st.markdown(f"<div class='translation-box'><b>English Context:</b> {translate_to_english(linea)}</div>", unsafe_allow_html=True)
                     for a in alertas: st.write(a)
-            elif "show details" in linea_lower:
-                st.markdown(f"<div class='translation-box'><b>English Context:</b> {translate_to_english(linea)}</div>", unsafe_allow_html=True)
-            elif not show_detected:
+            else:
                 st.success(f"Line {i} ✅ Perfect")
         
         status_text.text("Audit complete!")
