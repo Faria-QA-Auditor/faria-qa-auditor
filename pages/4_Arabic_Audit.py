@@ -130,7 +130,7 @@ if st.button("🚀 Run Specialized Audit"):
                 alertas_finales = []
                 words_to_highlight = []
                 
-                # Reglas Manuales
+                # Reglas Manuales (Tienen prioridad)
                 if re.search(r'[,;]', linea):
                     alertas_finales.append("⚠️ **Warning [Punctuation]:** Found western symbols (use Arabic ، o ؛).")
                 
@@ -138,7 +138,7 @@ if st.button("🚀 Run Specialized Audit"):
                     alertas_finales.append("❌ **Error [Orthography]:** Missing Hamza. Use 'الأدب'.")
                     words_to_highlight.append("األدب")
 
-                # API LanguageTool
+                # API LanguageTool con protecciones de redundancia
                 try:
                     res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea, 'language': 'ar'}, timeout=5).json()
                     for m in res.get('matches', []):
@@ -147,14 +147,21 @@ if st.button("🚀 Run Specialized Audit"):
                         
                         if bad_word.lower() in ["show", "details", "hide"]: continue
                         
-                        words_to_highlight.append(bad_word)
+                        # PROTECCIÓN 1: Si la palabra ya fue marcada por una regla manual, no repetirla
+                        if bad_word in words_to_highlight: continue
                         
                         sug_text = ""
                         if m['replacements']:
                             best_sug = m['replacements'][0]['value']
+                            
+                            # PROTECCIÓN 2: Si la sugerencia es igual a la palabra original, ignorar alerta
+                            if best_sug.strip() == bad_word.strip():
+                                continue
+                                
                             sug_translation = translate_to_english(best_sug)
                             sug_text = f" (Try: **{best_sug}** → *'{sug_translation}'*)"
                         
+                        words_to_highlight.append(bad_word)
                         bad_word_trans = translate_to_english(bad_word)
                         alertas_finales.append(f"❌ **Grammar/Spelling:** Issue in '{bad_word}' ('{bad_word_trans}').{sug_text}")
                 except:
