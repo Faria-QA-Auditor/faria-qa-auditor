@@ -8,7 +8,8 @@ st.set_page_config(page_title="French Standards Auditor", page_icon="🇫🇷", 
 
 st.markdown("""
     <style>
-    .stButton>button { width: 100%; border-radius: 12px; height: 3em; background-color: #4a148c; color: white; font-weight: bold; }
+    .stButton>button { width: 100%; border-radius: 12px; height: 3em; background-color: #4a148c; color: white; font-weight: bold; border: none; }
+    .stButton>button:hover { background-color: #6a1b9a; color: white; }
     /* Barra de Progreso Morada */
     .stProgress > div > div > div > div { background-color: #4a148c; }
     .translation-box { background-color: #f0f2f6; border-left: 5px solid #4a148c; padding: 12px; margin: 10px 0; font-style: italic; border-radius: 0 8px 8px 0; }
@@ -35,13 +36,19 @@ def translate_to_english(text):
         return res[0][0][0]
     except: return "[Translation N/A]"
 
-# --- RESALTADOR ---
+# --- RESALTADOR (Parche preciso anti-letras sueltas) ---
 def highlight_errors(text, words):
     highlighted = unicodedata.normalize('NFC', text)
+    # Ordenamos por longitud para procesar palabras largas primero
     for word in sorted(set(words), key=len, reverse=True):
-        if len(word.strip()) <= 1: continue 
-        norm_word = unicodedata.normalize('NFC', word.strip())
-        highlighted = re.sub(rf"\b({re.escape(norm_word)})\b", r"<span class='highlight'>\1</span>", highlighted)
+        if word and len(word.strip()) > 0:
+            clean_word = re.escape(word.strip())
+            # Usamos límites de palabra (\b) para evitar el efecto dálmata
+            pattern = rf"(?i)\b{clean_word}\b"
+            if len(word) <= 2 or "." in word:
+                highlighted = highlighted.replace(word, f"<span class='highlight'>{word}</span>", 1)
+            else:
+                highlighted = re.sub(pattern, rf"<span class='highlight'>{word}</span>", highlighted)
     return highlighted
 
 # 2. HEADER
@@ -85,27 +92,42 @@ if st.button("🚀 Run French Audit"):
             if "show details" in linea_lower:
                 st.markdown(f"""
                     <div class='db-info-box'>
-                        Line {i} ℹ️ <b>'Show details' detected:</b> There is hidden information in this line. 
-                        Please verify the source database content.
+                        Line {i} ℹ️ <b>'Show details' detected:</b> Verify source database content.
                     </div>
                 """, unsafe_allow_html=True)
                 continue
 
             alertas = []
             to_highlight = []
+            linea_audit = linea
 
+            # --- REGLA: Símbolos de Sublime (Validación y Limpieza) ---
+            sublime_tags = ['{{', '%%', '??', '$$', '<<', '##', '!!', '[[', '@@', '&&', '<br/>', '**']
+            for tag in sublime_tags:
+                if tag in linea:
+                    # Debe ser un par al inicio. Validamos si hay más de 2 símbolos seguidos (triple check)
+                    triple_check = tag + tag[0] if len(tag) == 2 else tag
+                    if not linea.startswith(tag) or (len(tag) == 2 and linea.startswith(triple_check)):
+                        alertas.append(f"⚠️ **Format:** Symbol '{tag}' must be a PAIR at the START of the line.")
+                    linea_audit = linea_audit.replace(tag, "")
+
+            # --- REGLA: Doble Espacio ---
+            if "  " in linea_audit:
+                alertas.append("❌ **Spacing:** Double space detected within the sentence.")
+
+            # --- API LANGUAGETOOL ---
             try:
-                res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea, 'language': 'fr'}).json()
+                res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea_audit, 'language': 'fr'}).json()
                 for m in res.get('matches', []):
                     r_id = m.get('rule', {}).get('id', '')
                     
-                    # FILTROS CRUCIALES: Ignorar puntuación francesa, capitalización y sugerencias morfológicas erróneas (de/d')
+                    # Filtros de ruido
                     if any(x in r_id for x in ["FRENCH_WHITESPACE", "FR_PUNCTUATION", "UPPERCASE_SENTENCE_START", "MORFOLOGIK_RULE_FR_FR"]):
                         continue
 
-                    bad = unicodedata.normalize('NFC', linea[m['offset']:m['offset']+m['length']])
+                    bad = unicodedata.normalize('NFC', linea_audit[m['offset']:m['offset']+m['length']])
                     
-                    if bad.lower() in ["show", "details", "show details", "hide"] or len(bad) <= 1:
+                    if bad.lower() in ["show", "details", "hide"] or len(bad.strip()) <= 1:
                         continue
                     
                     to_highlight.append(bad)
