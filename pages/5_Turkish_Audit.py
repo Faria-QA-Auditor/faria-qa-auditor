@@ -9,7 +9,8 @@ st.set_page_config(page_title="Turkish Auditor", page_icon="🇹🇷", layout="c
 # --- CSS CON HIGHLIGHTING Y BARRA MORADA ---
 st.markdown("""
     <style>
-    .stButton>button { width: 100%; border-radius: 12px; background-color: #4a148c; color: white; font-weight: bold; height: 3em; }
+    .stButton>button { width: 100%; border-radius: 12px; background-color: #4a148c; color: white; font-weight: bold; height: 3em; border: none; }
+    .stButton>button:hover { background-color: #6a1b9a; color: white; }
     /* Barra de Progreso Morada */
     .stProgress > div > div > div > div { background-color: #4a148c; }
     .translation-box { background-color: #f0f2f6; border-left: 5px solid #4a148c; padding: 10px; margin: 10px 0; font-style: italic; }
@@ -35,11 +36,20 @@ def translate_to_english(text):
         return res[0][0][0]
     except: return "[Translation N/A]"
 
+# --- PARCHE HIGHLIGHT ERRORS (Evita efecto dálmata) ---
 def highlight_errors(text, words):
-    highlighted = text
+    highlighted = unicodedata.normalize('NFC', text)
+    # Ordenar por longitud descendente para procesar frases largas antes que palabras sueltas
     for word in sorted(set(words), key=len, reverse=True):
         if word and len(word.strip()) > 0:
-            highlighted = re.sub(f"({re.escape(word)})", r"<span class='highlight'>\1</span>", highlighted)
+            clean_word = re.escape(word.strip())
+            # Usamos límites de palabra \b para evitar resaltar letras dentro de otras palabras
+            pattern = rf"(?i)\b{clean_word}\b"
+            # Si es un símbolo o puntuación, reemplazo directo simple
+            if len(word) <= 1 or not word[0].isalnum():
+                highlighted = highlighted.replace(word, f"<span class='highlight'>{word}</span>", 1)
+            else:
+                highlighted = re.sub(pattern, rf"<span class='highlight'>{word}</span>", highlighted)
     return highlighted
 
 # 2. HEADER
@@ -70,7 +80,6 @@ if st.button("🚀 Run Turkish Audit"):
         status_text = st.empty()
 
         for i, linea in enumerate(lineas, 1):
-            # Actualización visual
             progress_bar.progress(i / len(lineas))
             status_text.text(f"Auditing line {i} of {len(lineas)}...")
 
@@ -90,9 +99,24 @@ if st.button("🚀 Run Turkish Audit"):
 
             alertas = []
             to_highlight = []
+            linea_audit = linea
 
-            # --- REGLA: Inicio de línea ---
-            if re.match(r'^\.', linea):
+            # --- REGLA: Símbolos de Sublime (Pares al inicio) ---
+            sublime_tags = ['{{', '%%', '??', '$$', '<<', '##', '!!', '[[', '@@', '&&', '<br/>', '**']
+            for tag in sublime_tags:
+                if tag in linea:
+                    # Triple check: más de 2 seguidos o mala posición
+                    triple_check = tag + tag[0] if len(tag) == 2 else tag
+                    if not linea.startswith(tag) or (len(tag) == 2 and linea.startswith(triple_check)):
+                        alertas.append(f"⚠️ **Format:** Symbol '{tag}' must be a PAIR at the START of the line.")
+                    linea_audit = linea_audit.replace(tag, "")
+
+            # --- REGLA: Doble Espacio ---
+            if "  " in linea_audit:
+                alertas.append("❌ **Spacing:** Double space detected within the phrase.")
+
+            # --- REGLA: Inicio con punto ---
+            if linea_audit.strip().startswith('.'):
                 alertas.append("❌ **Error [Format]:** Line starts with a dot. Please remove it.")
                 to_highlight.append(".")
 
@@ -104,17 +128,17 @@ if st.button("🚀 Run Turkish Audit"):
                 "Adabımuaşerei": "Adabımuaşereti"
             }
             for err, fix in common_errors.items():
-                if err in linea:
+                if err in linea_audit:
                     alertas.append(f"❌ **Error [Orthography]:** Found '{err}'. Did you mean '{fix}'?")
                     to_highlight.append(err)
 
             # --- API LANGUAGETOOL ---
             try:
-                res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea, 'language': 'tr'}).json()
+                res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea_audit, 'language': 'tr'}).json()
                 for m in res.get('matches', []):
-                    bad = linea[m['offset']:m['offset']+m['length']]
+                    bad = linea_audit[m['offset']:m['offset']+m['length']]
                     
-                    if bad.lower() in ["show details", "hide details"] or bad in to_highlight: 
+                    if bad.lower() in ["show details", "hide details"] or len(bad.strip()) <= 1: 
                         continue
                     
                     # Filtro de sugerencia idéntica
@@ -122,7 +146,6 @@ if st.button("🚀 Run Turkish Audit"):
                         best_sug = m['replacements'][0]['value']
                         if best_sug.strip() == bad.strip():
                             continue
-                        
                         sug = f" (Try: **{best_sug}** → *'{translate_to_english(best_sug)}'*)"
                     else:
                         sug = ""
