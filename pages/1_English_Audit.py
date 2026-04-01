@@ -29,13 +29,10 @@ st.markdown("""
 # --- FUNCIÓN DE RESALTADO (Parche anti-letras sueltas) ---
 def highlight_errors(text, words):
     highlighted = text
-    # Ordenamos por longitud para evitar que 'd' rompa palabras más largas
     for word in sorted(set(words), key=len, reverse=True):
         if word and len(word.strip()) > 0:
             clean_word = re.escape(word.strip())
-            # Usamos límites de palabra (\b) para no resaltar la 'd' dentro de 'diccionario'
             pattern = rf"(?i)\b{clean_word}\b"
-            # Si es un solo carácter o tiene puntos, somos más específicos con el reemplazo
             if len(word) <= 2 or "." in word:
                 highlighted = highlighted.replace(word, f"<span class='highlight'>{word}</span>", 1)
             else:
@@ -95,19 +92,16 @@ if st.button("🚀 Run English Audit"):
             
             for tag in sublime_tags:
                 if tag in linea:
-                    # REGLA: Debe estar al inicio y ser solo un par (no $$$ o similar)
-                    double_tag = tag + tag[0] if len(tag) < 3 else tag # Para detectar triple símbolo
+                    double_tag = tag + tag[0] if len(tag) < 3 else tag
                     if not linea.startswith(tag) or (len(tag) == 2 and linea.startswith(double_tag)):
                         alertas.append(f"⚠️ **Format:** Symbol '{tag}' must be a PAIR at the START of the line.")
-                    
-                    # Limpiar el tag para la auditoría de gramática
                     linea_audit = linea_audit.replace(tag, "")
 
             # --- REGLA: Doble Espacio ---
             if "  " in linea_audit:
                 alertas.append("❌ **Spacing:** Double space detected.")
 
-            # --- REGLA 1: Dialecto (Oxford Spelling Friendly) ---
+            # --- REGLA 1: Dialecto (Manual checks) ---
             if "US" in dialect:
                 if re.search(r'\b\w+ise\b', linea_audit): 
                     alertas.append("⚠️ **Dialect:** Use '-ize' for US English.")
@@ -117,11 +111,22 @@ if st.button("🚀 Run English Audit"):
                 if "color" in linea_audit.lower() or "behavior" in linea_audit.lower():
                     alertas.append("⚠️ **Dialect:** US spelling detected. Use '-our' for UK.")
 
-            # --- API LANGUAGETOOL ---
+            # --- API LANGUAGETOOL (Con bloqueo de Oxford Spelling) ---
             lang_code = "en-US" if "US" in dialect else "en-GB"
             try:
-                res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea_audit.strip(), 'language': lang_code}).json()
+                # Deshabilitamos las reglas de Oxford para que acepte -ise en UK
+                payload = {
+                    'text': linea_audit.strip(), 
+                    'language': lang_code,
+                    'disabledRules': 'MCI_OXFORD_SPELLING_Z_NOT_S,OXFORD_SPELLING_Z_NOT_S'
+                }
+                res = requests.post('https://api.languagetool.org/v2/check', data=payload).json()
+                
                 for m in res.get('matches', []):
+                    # Filtro de seguridad por si la API ignora el payload
+                    if 'OXFORD' in m['rule']['id'] or 'Z_NOT_S' in m['rule']['id']:
+                        continue
+                        
                     bad = linea_audit[m['offset']:m['offset']+m['length']]
                     if bad.strip() and bad.lower() not in ["show", "details"]:
                         to_highlight.append(bad)
