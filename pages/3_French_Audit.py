@@ -10,10 +10,8 @@ st.markdown("""
     <style>
     .stButton>button { width: 100%; border-radius: 12px; height: 3em; background-color: #4a148c; color: white; font-weight: bold; border: none; }
     .stButton>button:hover { background-color: #6a1b9a; color: white; }
-    /* Barra de Progreso Morada */
     .stProgress > div > div > div > div { background-color: #4a148c; }
     .translation-box { background-color: #f0f2f6; border-left: 5px solid #4a148c; padding: 12px; margin: 10px 0; font-style: italic; border-radius: 0 8px 8px 0; }
-    /* Estilo para el Recuadro Azul de Base de Datos */
     .db-info-box {
         background-color: #e3f2fd;
         border-left: 5px solid #2196f3;
@@ -36,14 +34,12 @@ def translate_to_english(text):
         return res[0][0][0]
     except: return "[Translation N/A]"
 
-# --- RESALTADOR (Parche preciso anti-letras sueltas) ---
+# --- RESALTADOR ---
 def highlight_errors(text, words):
     highlighted = unicodedata.normalize('NFC', text)
-    # Ordenamos por longitud para procesar palabras largas primero
     for word in sorted(set(words), key=len, reverse=True):
         if word and len(word.strip()) > 0:
             clean_word = re.escape(word.strip())
-            # Usamos límites de palabra (\b) para evitar el efecto dálmata
             pattern = rf"(?i)\b{clean_word}\b"
             if len(word) <= 2 or "." in word:
                 highlighted = highlighted.replace(word, f"<span class='highlight'>{word}</span>", 1)
@@ -58,15 +54,13 @@ except: st.title("FARIA EDUCATION GROUP")
 st.markdown("<h2 style='color: #444;'>French Standards Auditor</h2>", unsafe_allow_html=True)
 st.write("---")
 
-# 3. INPUT Y CONTADOR (2500 Líneas)
+# 3. INPUT Y CONTADOR
 texto_raw = st.text_area("Paste French standards here:", height=300, placeholder="")
 
 if texto_raw:
     lineas_reales = [l for l in texto_raw.split('\n') if l.strip()]
     total_lines = len(lineas_reales)
     st.markdown(f"**Line Count:** {total_lines} / 2500")
-    if total_lines > 2500:
-        st.error("⚠️ **Warning:** Document exceeds the 2,500-line limit.")
 
 if st.button("🚀 Run French Audit"):
     if not texto_raw.strip():
@@ -75,7 +69,6 @@ if st.button("🚀 Run French Audit"):
         texto_norm = unicodedata.normalize('NFC', texto_raw)
         lineas = [l.strip() for l in texto_norm.split('\n') if l.strip()]
 
-        # --- BARRA DE PROGRESO ---
         progress_bar = st.progress(0)
         status_text = st.empty()
 
@@ -84,28 +77,19 @@ if st.button("🚀 Run French Audit"):
             status_text.text(f"Auditing line {i} of {len(lineas)}...")
 
             linea_lower = linea.lower().strip()
-            
-            # HIDE DETAILS: Ignorar
             if "hide details" in linea_lower: continue
-
-            # SHOW DETAILS: Recuadro Azul y saltar auditoría
             if "show details" in linea_lower:
-                st.markdown(f"""
-                    <div class='db-info-box'>
-                        Line {i} ℹ️ <b>'Show details' detected:</b> Verify source database content.
-                    </div>
-                """, unsafe_allow_html=True)
+                st.markdown(f"<div class='db-info-box'>Line {i} ℹ️ <b>'Show details' detected:</b> Verify database.</div>", unsafe_allow_html=True)
                 continue
 
             alertas = []
             to_highlight = []
             linea_audit = linea
 
-            # --- REGLA: Símbolos de Sublime (Validación y Limpieza) ---
+            # --- REGLA: Símbolos de Sublime (Pares al inicio) ---
             sublime_tags = ['{{', '%%', '??', '$$', '<<', '##', '!!', '[[', '@@', '&&', '<br/>', '**']
             for tag in sublime_tags:
                 if tag in linea:
-                    # Debe ser un par al inicio. Validamos si hay más de 2 símbolos seguidos (triple check)
                     triple_check = tag + tag[0] if len(tag) == 2 else tag
                     if not linea.startswith(tag) or (len(tag) == 2 and linea.startswith(triple_check)):
                         alertas.append(f"⚠️ **Format:** Symbol '{tag}' must be a PAIR at the START of the line.")
@@ -113,31 +97,28 @@ if st.button("🚀 Run French Audit"):
 
             # --- REGLA: Doble Espacio ---
             if "  " in linea_audit:
-                alertas.append("❌ **Spacing:** Double space detected within the sentence.")
+                alertas.append("❌ **Spacing:** Double space detected.")
 
             # --- API LANGUAGETOOL ---
             try:
-                res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea_audit, 'language': 'fr'}).json()
+                res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea_audit.strip(), 'language': 'fr'}).json()
                 for m in res.get('matches', []):
                     r_id = m.get('rule', {}).get('id', '')
                     
-                    # Filtros de ruido
+                    # Eliminamos UPPERCASE_SENTENCE_START de esta lista para que SÍ marque la mayúscula faltante
                     if any(x in r_id for x in ["FRENCH_WHITESPACE", "FR_PUNCTUATION", "MORFOLOGIK_RULE_FR_FR"]):
                         continue
 
                     bad = unicodedata.normalize('NFC', linea_audit[m['offset']:m['offset']+m['length']])
-                    
                     if bad.lower() in ["show", "details", "hide"] or len(bad.strip()) <= 1:
                         continue
                     
                     to_highlight.append(bad)
-                    
-                    # Traducción de alertas
                     msg_fr = m['message'].lower()
                     msg_en = "Grammar/Spelling issue"
                     if "accord" in msg_fr: msg_en = "Grammatical agreement"
                     elif "orthographe" in msg_fr: msg_en = "Spelling error"
-                    elif "accent" in msg_fr or "diacritique" in msg_fr: msg_en = "Accent/Diacritic error"
+                    elif "majuscule" in msg_fr or "uppercase" in msg_fr: msg_en = "Capitalization error"
                     
                     sug = f" (Try: **{m['replacements'][0]['value']}**)" if m['replacements'] else ""
                     alertas.append(f"❌ **{msg_en}:** Issue in '{bad}'.{sug}")
