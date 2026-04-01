@@ -6,47 +6,35 @@ import unicodedata
 # 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(page_title="English Standards Auditor", page_icon="🇺🇸", layout="centered")
 
-# --- CSS PERSONALIZADO (Incluye Barra de Progreso Morada) ---
+# --- CSS PERSONALIZADO (Barra de Progreso y Botón Morado) ---
 st.markdown("""
     <style>
-    /* Estilo del Botón */
     .stButton>button {
-        width: 100%;
-        border-radius: 12px;
-        height: 3em;
-        background-color: #4a148c;
-        color: white;
-        font-weight: bold;
-        border: none;
+        width: 100%; border-radius: 12px; height: 3em;
+        background-color: #4a148c; color: white; font-weight: bold; border: none;
     }
-    /* Estilo de la Barra de Progreso (Morado Faria) */
-    .stProgress > div > div > div > div {
-        background-color: #4a148c;
-    }
+    .stButton>button:hover { background-color: #6a1b9a; color: white; }
+    .stProgress > div > div > div > div { background-color: #4a148c; }
     .highlight {
-        background-color: #fff3cd;
-        font-weight: bold;
-        color: #d9534f;
-        text-decoration: underline;
-        padding: 0 2px;
+        background-color: #fff3cd; font-weight: bold; color: #d9534f;
+        text-decoration: underline; padding: 0 2px;
     }
     .complexity-badge {
-        background-color: #ff4b4b;
-        color: white;
-        padding: 8px 12px;
-        border-radius: 8px;
-        font-weight: bold;
-        text-align: center;
+        background-color: #ff4b4b; color: white; padding: 8px 12px;
+        border-radius: 8px; font-weight: bold; text-align: center;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- FUNCIÓN DE RESALTADO ---
+# --- FUNCIÓN DE RESALTADO (Parche anti-letras sueltas) ---
 def highlight_errors(text, words):
     highlighted = text
-    for word in set(words):
+    for word in sorted(set(words), key=len, reverse=True):
         if word and len(word.strip()) > 0:
-            highlighted = re.sub(f"({re.escape(word)})", r"<span class='highlight'>\1</span>", highlighted)
+            clean_word = re.escape(word.strip())
+            # Busca límites de palabra para evitar resaltar letras dentro de otras palabras
+            pattern = rf"(?i)\b{clean_word}\b"
+            highlighted = re.sub(pattern, rf"<span class='highlight'>{word}</span>", highlighted, count=1)
     return highlighted
 
 # 2. HEADER
@@ -81,68 +69,76 @@ if st.button("🚀 Run English Audit"):
         texto_norm = unicodedata.normalize('NFC', texto_input)
         lineas = [l.strip() for l in texto_norm.split('\n') if l.strip()]
         
-        # --- NUEVA BARRA DE PROGRESO ---
         progress_bar = st.progress(0)
         status_text = st.empty()
         p_errors = 0 
         
         for i, linea in enumerate(lineas, 1):
-            # Actualización de la barra y texto
             progress_bar.progress(i / len(lineas))
             status_text.text(f"Auditing line {i} of {len(lineas)}...")
             
             if linea.lower().strip() == "hide details": continue
-            
             if "show details" in linea.lower():
-                st.info(f"Line {i} ℹ️ **'Show details' detected:** Please verify if there is hidden information in the source database.")
+                st.info(f"Line {i} ℹ️ **'Show details' detected.**")
+                continue
 
             alertas = []
             to_highlight = []
 
-            # --- REGLA 1: Dialecto (Spelling) ---
-            if "US" in dialect:
-                if re.search(r'\b\w+ise\b', linea): 
-                    alertas.append("⚠️ **Dialect:** Detected '-ise' (UK). Use '-ize' for US (e.g., 'organize').")
-                if re.search(r'\b\w+our\b', linea):
-                    alertas.append("⚠️ **Dialect:** Detected '-our' (UK). Use '-or' for US (e.g., 'behavior').")
-            else: # UK
-                if re.search(r'\b\w+ize\b', linea):
-                    alertas.append("⚠️ **Dialect:** Detected '-ize' (US). Preferred '-ise' for UK standards.")
-
-            # --- REGLA 2: Paralelismo y Tono Académico ---
-            words = linea.split()
-            if words and words[0].lower().endswith('ing'):
-                p_errors += 1
-                alertas.append("❌ **Parallelism Failure:** Line starts with a Gerund (-ing). Check consistency.")
+            # --- REGLA: Símbolos de Sublime (Excepción al inicio) ---
+            sublime_tags = [r'\{\{', r'%%', r'\?\?', r'\$\$', r'<<', r'##', r'!!', r'\[\[', r'@@', r'&&', r'<br/>', r'\*\*']
+            linea_audit = linea
             
-            forbidden = {"get": "acquire", "thing": "element", "stuff": "material", "a lot": "significantly"}
+            for tag in sublime_tags:
+                # Si el tag está al inicio pero hay más de 2 (ej: $$$) o está en otra posición -> Alerta
+                if re.search(tag, linea):
+                    # Validar si es un par exacto al inicio
+                    if not re.match(rf"^{tag}(?![^{tag[0]}]*{tag[0]})", linea):
+                         alertas.append(f"⚠️ **Format:** Symbol '{tag.replace('\\','')}' must be a pair at the START of the line.")
+                    # Limpiar para la API de gramática
+                    linea_audit = re.sub(tag, '', linea_audit)
+
+            # --- REGLA: Doble Espacio ---
+            if "  " in linea_audit:
+                alertas.append("❌ **Spacing:** Double space detected within the sentence.")
+
+            # --- REGLA 1: Dialecto (Oxford Friendly) ---
+            if "US" in dialect:
+                if re.search(r'\b\w+ise\b', linea_audit): 
+                    alertas.append("⚠️ **Dialect:** Detected '-ise' (UK). Use '-ize' for US.")
+                if re.search(r'\b\w+our\b', linea_audit):
+                    alertas.append("⚠️ **Dialect:** Detected '-our' (UK). Use '-or' for US.")
+            else: # UK
+                if re.search(r'\b\w+our\b', linea_audit) is None and any(word in linea_audit.lower() for word in ["color", "behavior", "flavor"]):
+                    alertas.append("⚠️ **Dialect:** US spelling detected. Use '-our' for UK.")
+                # Flexibilidad -ize / -ise: No marcamos error manual, dejamos que LanguageTool decida.
+
+            # --- REGLA 2: Tono Académico ---
+            forbidden = {"get": "acquire", "thing": "element", "stuff": "material"}
             for word, sug in forbidden.items():
-                if re.search(rf'\b{word}\b', linea.lower()):
-                    alertas.append(f"⚠️ **Academic Tone:** Avoid '{word}'. Use **{sug}** instead.")
+                if re.search(rf'\b{word}\b', linea_audit.lower()):
+                    alertas.append(f"⚠️ **Tone:** Use **{sug}** instead of '{word}'.")
                     to_highlight.append(word)
 
             # --- API LANGUAGETOOL ---
             lang_code = "en-US" if "US" in dialect else "en-GB"
             try:
-                res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea, 'language': lang_code}).json()
+                res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea_audit, 'language': lang_code}).json()
                 for m in res.get('matches', []):
-                    bad = linea[m['offset']:m['offset']+m['length']]
-                    if bad.lower() in ["show", "details", "hide"]: continue
-                    to_highlight.append(bad)
-                    alertas.append(f"❌ **{m['rule']['category']['name']}:** {m['message']}")
+                    bad = linea_audit[m['offset']:m['offset']+m['length']]
+                    if bad.strip() and bad.lower() not in ["show", "details"]:
+                        to_highlight.append(bad)
+                        alertas.append(f"❌ **{m['rule']['category']['name']}:** {m['message']}")
             except: pass
 
             if alertas:
                 with st.expander(f"Line {i} ⚠️ Issues found", expanded=True):
                     st.markdown(f"<div>{highlight_errors(linea, to_highlight)}</div>", unsafe_allow_html=True)
                     for a in alertas: st.write(a)
-            elif not "show details" in linea.lower():
+            else:
                 st.success(f"Line {i} ✅ Perfect")
 
         status_text.text("Audit complete!")
-        if p_errors > 3:
-            st.markdown("---")
-            st.markdown("<div class='complexity-badge'>🚩 High Complexity Review: Multiple parallelism issues detected.</div>", unsafe_allow_html=True)
 
 st.write("---")
 st.caption("Standards and Services Team | Faria Education Group")
