@@ -29,12 +29,17 @@ st.markdown("""
 # --- FUNCIÓN DE RESALTADO (Parche anti-letras sueltas) ---
 def highlight_errors(text, words):
     highlighted = text
+    # Ordenamos por longitud para evitar que 'd' rompa palabras más largas
     for word in sorted(set(words), key=len, reverse=True):
         if word and len(word.strip()) > 0:
             clean_word = re.escape(word.strip())
-            # Busca límites de palabra para evitar resaltar letras dentro de otras palabras
+            # Usamos límites de palabra (\b) para no resaltar la 'd' dentro de 'diccionario'
             pattern = rf"(?i)\b{clean_word}\b"
-            highlighted = re.sub(pattern, rf"<span class='highlight'>{word}</span>", highlighted, count=1)
+            # Si es un solo carácter o tiene puntos, somos más específicos con el reemplazo
+            if len(word) <= 2 or "." in word:
+                highlighted = highlighted.replace(word, f"<span class='highlight'>{word}</span>", 1)
+            else:
+                highlighted = re.sub(pattern, rf"<span class='highlight'>{word}</span>", highlighted)
     return highlighted
 
 # 2. HEADER
@@ -71,7 +76,6 @@ if st.button("🚀 Run English Audit"):
         
         progress_bar = st.progress(0)
         status_text = st.empty()
-        p_errors = 0 
         
         for i, linea in enumerate(lineas, 1):
             progress_bar.progress(i / len(lineas))
@@ -84,46 +88,39 @@ if st.button("🚀 Run English Audit"):
 
             alertas = []
             to_highlight = []
-
-            # --- REGLA: Símbolos de Sublime (Excepción al inicio) ---
-            sublime_tags = [r'\{\{', r'%%', r'\?\?', r'\$\$', r'<<', r'##', r'!!', r'\[\[', r'@@', r'&&', r'<br/>', r'\*\*']
             linea_audit = linea
+
+            # --- REGLA: Símbolos de Sublime (Validación y Limpieza) ---
+            sublime_tags = ['{{', '%%', '??', '$$', '<<', '##', '!!', '[[', '@@', '&&', '<br/>', '**']
             
             for tag in sublime_tags:
-                # Si el tag está al inicio pero hay más de 2 (ej: $$$) o está en otra posición -> Alerta
-                if re.search(tag, linea):
-                    # Validar si es un par exacto al inicio
-                    if not re.match(rf"^{tag}(?![^{tag[0]}]*{tag[0]})", linea):
-                         alertas.append(f"⚠️ **Format:** Symbol '{tag.replace('\\','')}' must be a pair at the START of the line.")
-                    # Limpiar para la API de gramática
-                    linea_audit = re.sub(tag, '', linea_audit)
+                if tag in linea:
+                    # REGLA: Debe estar al inicio y ser solo un par (no $$$ o similar)
+                    double_tag = tag + tag[0] if len(tag) < 3 else tag # Para detectar triple símbolo
+                    if not linea.startswith(tag) or (len(tag) == 2 and linea.startswith(double_tag)):
+                        alertas.append(f"⚠️ **Format:** Symbol '{tag}' must be a PAIR at the START of the line.")
+                    
+                    # Limpiar el tag para la auditoría de gramática
+                    linea_audit = linea_audit.replace(tag, "")
 
             # --- REGLA: Doble Espacio ---
             if "  " in linea_audit:
-                alertas.append("❌ **Spacing:** Double space detected within the sentence.")
+                alertas.append("❌ **Spacing:** Double space detected.")
 
-            # --- REGLA 1: Dialecto (Oxford Friendly) ---
+            # --- REGLA 1: Dialecto (Oxford Spelling Friendly) ---
             if "US" in dialect:
                 if re.search(r'\b\w+ise\b', linea_audit): 
-                    alertas.append("⚠️ **Dialect:** Detected '-ise' (UK). Use '-ize' for US.")
+                    alertas.append("⚠️ **Dialect:** Use '-ize' for US English.")
                 if re.search(r'\b\w+our\b', linea_audit):
-                    alertas.append("⚠️ **Dialect:** Detected '-our' (UK). Use '-or' for US.")
+                    alertas.append("⚠️ **Dialect:** Use '-or' for US English.")
             else: # UK
-                if re.search(r'\b\w+our\b', linea_audit) is None and any(word in linea_audit.lower() for word in ["color", "behavior", "flavor"]):
+                if "color" in linea_audit.lower() or "behavior" in linea_audit.lower():
                     alertas.append("⚠️ **Dialect:** US spelling detected. Use '-our' for UK.")
-                # Flexibilidad -ize / -ise: No marcamos error manual, dejamos que LanguageTool decida.
-
-            # --- REGLA 2: Tono Académico ---
-            forbidden = {"get": "acquire", "thing": "element", "stuff": "material"}
-            for word, sug in forbidden.items():
-                if re.search(rf'\b{word}\b', linea_audit.lower()):
-                    alertas.append(f"⚠️ **Tone:** Use **{sug}** instead of '{word}'.")
-                    to_highlight.append(word)
 
             # --- API LANGUAGETOOL ---
             lang_code = "en-US" if "US" in dialect else "en-GB"
             try:
-                res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea_audit, 'language': lang_code}).json()
+                res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea_audit.strip(), 'language': lang_code}).json()
                 for m in res.get('matches', []):
                     bad = linea_audit[m['offset']:m['offset']+m['length']]
                     if bad.strip() and bad.lower() not in ["show", "details"]:
