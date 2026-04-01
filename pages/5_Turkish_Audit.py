@@ -11,10 +11,8 @@ st.markdown("""
     <style>
     .stButton>button { width: 100%; border-radius: 12px; background-color: #4a148c; color: white; font-weight: bold; height: 3em; border: none; }
     .stButton>button:hover { background-color: #6a1b9a; color: white; }
-    /* Barra de Progreso Morada */
     .stProgress > div > div > div > div { background-color: #4a148c; }
     .translation-box { background-color: #f0f2f6; border-left: 5px solid #4a148c; padding: 10px; margin: 10px 0; font-style: italic; }
-    /* Estilo para el Recuadro Azul de Base de Datos */
     .db-info-box {
         background-color: #e3f2fd;
         border-left: 5px solid #2196f3;
@@ -36,7 +34,6 @@ def translate_to_english(text):
         return res[0][0][0]
     except: return "[Translation N/A]"
 
-# --- PARCHE HIGHLIGHT ERRORS (Evita efecto dálmata) ---
 def highlight_errors(text, words):
     highlighted = unicodedata.normalize('NFC', text)
     for word in sorted(set(words), key=len, reverse=True):
@@ -56,7 +53,7 @@ except: st.title("FARIA EDUCATION GROUP")
 st.markdown("<h2 style='color: #444;'>Turkish Standards Auditor</h2>", unsafe_allow_html=True)
 st.write("---")
 
-# 3. INPUT Y CONTADOR (2500 Líneas)
+# 3. INPUT Y CONTADOR
 texto_input = st.text_area("Paste Turkish standards here:", height=300)
 
 if texto_input:
@@ -79,44 +76,43 @@ if st.button("🚀 Run Turkish Audit"):
             alertas = []
             to_highlight = []
             
-            # --- LIMPIEZA DE IDENTIFICADORES DE SUBLIME PARA AUDITAR ---
-            # Removemos temporalmente los símbolos para que no interfieran con la gramática
+            # 1. Identificar comandos especiales sin romper la línea
+            is_show = "show details" in linea.lower()
+            
+            # 2. Limpiar la línea para auditoría (Quitamos tags de Sublime y comandos de ClickUp)
             linea_audit = re.sub(r'^(\{\{|%%|\?\?|\$\$|<<|##|!!|\[\[|@@|&&|\*\*|<br/>)', '', linea)
-            
-            # --- MANEJO DE SHOW/HIDE DETAILS (Sin saltar la línea) ---
-            if "show details" in linea.lower():
+            linea_clean = re.sub(rf"(?i)show details|hide details", "", linea_audit).strip()
+
+            if is_show:
                 st.markdown(f"<div class='db-info-box'>Line {i} ℹ️ <b>'Show details' detected.</b></div>", unsafe_allow_html=True)
-            
-            # Limpiamos los comandos de la línea de auditoría para procesar el resto
-            linea_audit = re.sub(rf"(?i)show details|hide details", "", linea_audit).strip()
 
-            # --- REGLA: Alfabeto Turco Estricto (Bloqueo Q, W, X) ---
-            forbidden_chars = re.findall(r'[qwxQWX]', linea_audit)
-            if forbidden_chars:
-                unique_f = sorted(list(set(forbidden_chars)))
-                alertas.append(f"❌ **Alphabet Error:** Characters {unique_f} are not Turkish.")
-                to_highlight.extend(unique_f)
-
-            # --- REGLA: Doble Espacio ---
-            if "  " in linea_audit:
-                alertas.append("❌ **Spacing:** Double space detected.")
-
-            # --- REGLA: Latinización y Errores de i/ı o/ö ---
-            common_errors = {
-                "Ulkelere": "Ülkelere", "sabir": "sabır", "askim": "aşkım",
-                "tesekkur": "teşekkür", "ogrenci": "öğrenci", "isik": "ışık"
+            # --- REGLA DE ORO: VALIDACIÓN MECÁNICA DE CARACTERES TURCOS ---
+            # Buscamos letras que suelen ser errores de latinización (i, g, c, s, o, u) 
+            # y que la API a veces ignora.
+            latinizadas = {
+                r'\baskim\b': 'aşkım',
+                r'\bogrenci\b': 'öğrenci',
+                r'\bisik\b': 'ışık',
+                r'\bcalismalar\b': 'çalışmalar'
             }
-            for err, fix in common_errors.items():
-                if err in linea_audit:
-                    alertas.append(f"❌ **Orthography:** Found '{err}'. Use Turkish characters: '{fix}'.")
-                    to_highlight.append(err)
+            for pattern, fix in latinizadas.items():
+                if re.search(pattern, linea_clean, re.IGNORECASE):
+                    alertas.append(f"❌ **Alphabet:** Detected Latin version. Did you mean '{fix}'?")
+                    found_word = re.search(pattern, linea_clean, re.IGNORECASE).group()
+                    to_highlight.append(found_word)
+
+            # Bloqueo total de Q, W, X
+            forbidden = re.findall(r'[qwxQWX]', linea_clean)
+            if forbidden:
+                alertas.append(f"❌ **Non-Turkish Letters:** {set(forbidden)} are not allowed.")
+                to_highlight.extend(forbidden)
 
             # --- API LANGUAGETOOL ---
-            if linea_audit:
+            if linea_clean:
                 try:
-                    res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea_audit, 'language': 'tr'}).json()
+                    res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea_clean, 'language': 'tr'}).json()
                     for m in res.get('matches', []):
-                        bad = linea_audit[m['offset']:m['offset']+m['length']]
+                        bad = linea_clean[m['offset']:m['offset']+m['length']]
                         if len(bad.strip()) <= 1: continue
                         
                         sug = f" (Try: **{m['replacements'][0]['value']}**)" if m['replacements'] else ""
@@ -128,7 +124,7 @@ if st.button("🚀 Run Turkish Audit"):
             if alertas:
                 with st.expander(f"Line {i} ⚠️ Issues found", expanded=True):
                     st.markdown(f"<div>{highlight_errors(linea, to_highlight)}</div>", unsafe_allow_html=True)
-                    st.markdown(f"<div class='translation-box'><b>English Context:</b> {translate_to_english(linea_audit)}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div class='translation-box'><b>English Context:</b> {translate_to_english(linea_clean)}</div>", unsafe_allow_html=True)
                     for a in alertas: st.write(a)
             else:
                 st.success(f"Line {i} ✅ Perfect")
