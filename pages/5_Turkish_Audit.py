@@ -39,13 +39,10 @@ def translate_to_english(text):
 # --- PARCHE HIGHLIGHT ERRORS (Evita efecto dálmata) ---
 def highlight_errors(text, words):
     highlighted = unicodedata.normalize('NFC', text)
-    # Ordenar por longitud descendente para procesar frases largas antes que palabras sueltas
     for word in sorted(set(words), key=len, reverse=True):
         if word and len(word.strip()) > 0:
             clean_word = re.escape(word.strip())
-            # Usamos límites de palabra \b para evitar resaltar letras dentro de otras palabras
             pattern = rf"(?i)\b{clean_word}\b"
-            # Si es un símbolo o puntuación, reemplazo directo simple
             if len(word) <= 1 or not word[0].isalnum():
                 highlighted = highlighted.replace(word, f"<span class='highlight'>{word}</span>", 1)
             else:
@@ -66,16 +63,12 @@ if texto_input:
     lineas_reales = [l for l in texto_input.split('\n') if l.strip()]
     total_lines = len(lineas_reales)
     st.markdown(f"**Line Count:** {total_lines} / 2500")
-    if total_lines > 2500:
-        st.error("⚠️ **Warning:** Document exceeds the 2,500-line limit.")
 
 if st.button("🚀 Run Turkish Audit"):
     if not texto_input.strip():
         st.warning("Please paste some text.")
     else:
         lineas = [l.strip() for l in texto_input.split('\n') if l.strip()]
-        
-        # --- BARRA DE PROGRESO ---
         progress_bar = st.progress(0)
         status_text = st.empty()
 
@@ -83,91 +76,59 @@ if st.button("🚀 Run Turkish Audit"):
             progress_bar.progress(i / len(lineas))
             status_text.text(f"Auditing line {i} of {len(lineas)}...")
 
-            linea_lower = linea.lower().strip()
-            
-            # HIDE DETAILS: Ignorar
-            if "hide details" in linea_lower: continue
-            
-            # SHOW DETAILS: Recuadro Azul
-            if "show details" in linea_lower:
-                st.markdown(f"""
-                    <div class='db-info-box'>
-                        Line {i} ℹ️ <b>'Show details' detected:</b> Please verify if there is hidden information in the source database.
-                    </div>
-                """, unsafe_allow_html=True)
-                continue
-
             alertas = []
             to_highlight = []
-            linea_audit = linea
+            
+            # --- LIMPIEZA DE IDENTIFICADORES DE SUBLIME PARA AUDITAR ---
+            # Removemos temporalmente los símbolos para que no interfieran con la gramática
+            linea_audit = re.sub(r'^(\{\{|%%|\?\?|\$\$|<<|##|!!|\[\[|@@|&&|\*\*|<br/>)', '', linea)
+            
+            # --- MANEJO DE SHOW/HIDE DETAILS (Sin saltar la línea) ---
+            if "show details" in linea.lower():
+                st.markdown(f"<div class='db-info-box'>Line {i} ℹ️ <b>'Show details' detected.</b></div>", unsafe_allow_html=True)
+            
+            # Limpiamos los comandos de la línea de auditoría para procesar el resto
+            linea_audit = re.sub(rf"(?i)show details|hide details", "", linea_audit).strip()
 
-            # --- REGLA: Símbolos de Sublime (Pares al inicio) ---
-            sublime_tags = ['{{', '%%', '??', '$$', '<<', '##', '!!', '[[', '@@', '&&', '<br/>', '**']
-            for tag in sublime_tags:
-                if tag in linea:
-                    # Triple check: más de 2 seguidos o mala posición
-                    triple_check = tag + tag[0] if len(tag) == 2 else tag
-                    if not linea.startswith(tag) or (len(tag) == 2 and linea.startswith(triple_check)):
-                        alertas.append(f"⚠️ **Format:** Symbol '{tag}' must be a PAIR at the START of the line.")
-                    linea_audit = linea_audit.replace(tag, "")
+            # --- REGLA: Alfabeto Turco Estricto (Bloqueo Q, W, X) ---
+            forbidden_chars = re.findall(r'[qwxQWX]', linea_audit)
+            if forbidden_chars:
+                unique_f = sorted(list(set(forbidden_chars)))
+                alertas.append(f"❌ **Alphabet Error:** Characters {unique_f} are not Turkish.")
+                to_highlight.extend(unique_f)
 
             # --- REGLA: Doble Espacio ---
             if "  " in linea_audit:
-                alertas.append("❌ **Spacing:** Double space detected within the phrase.")
+                alertas.append("❌ **Spacing:** Double space detected.")
 
-            # --- REGLA: Alfabeto Turco (Bloqueo de letras no pertenecientes a las 29 oficiales) ---
-            # Q, W, X no existen en el alfabeto turco.
-            forbidden_chars = re.findall(r'[qwxQWX]', linea_audit)
-            if forbidden_chars:
-                unique_forbidden = sorted(list(set(forbidden_chars)))
-                alertas.append(f"❌ **Alphabet Error:** Characters {unique_forbidden} are not part of the 29 Turkish letters.")
-                to_highlight.extend(unique_forbidden)
-
-            # --- REGLA: Inicio con punto ---
-            if linea_audit.strip().startswith('.'):
-                alertas.append("❌ **Error [Format]:** Line starts with a dot. Please remove it.")
-                to_highlight.append(".")
-
-            # --- REGLA: Latinización y Errores Comunes ---
+            # --- REGLA: Latinización y Errores de i/ı o/ö ---
             common_errors = {
-                "Ulkelere": "Ülkelere",
-                "sabir": "sabır",
-                "uygulalarından": "uygulamalarından",
-                "Adabımuaşerei": "Adabımuaşereti",
-                "askim": "aşkım"
+                "Ulkelere": "Ülkelere", "sabir": "sabır", "askim": "aşkım",
+                "tesekkur": "teşekkür", "ogrenci": "öğrenci", "isik": "ışık"
             }
             for err, fix in common_errors.items():
                 if err in linea_audit:
-                    alertas.append(f"❌ **Error [Orthography]:** Found '{err}'. Did you mean '{fix}'?")
+                    alertas.append(f"❌ **Orthography:** Found '{err}'. Use Turkish characters: '{fix}'.")
                     to_highlight.append(err)
 
             # --- API LANGUAGETOOL ---
-            try:
-                res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea_audit, 'language': 'tr'}).json()
-                for m in res.get('matches', []):
-                    bad = linea_audit[m['offset']:m['offset']+m['length']]
-                    
-                    if bad.lower() in ["show details", "hide details"] or len(bad.strip()) <= 1: 
-                        continue
-                    
-                    # Filtro de sugerencia idéntica
-                    if m['replacements']:
-                        best_sug = m['replacements'][0]['value']
-                        if best_sug.strip() == bad.strip():
-                            continue
-                        sug = f" (Try: **{best_sug}** → *'{translate_to_english(best_sug)}'*)"
-                    else:
-                        sug = ""
-
-                    to_highlight.append(bad)
-                    alertas.append(f"❌ **Grammar/Spelling:** Issue in '{bad}' ('{translate_to_english(bad)}').{sug}")
-            except: pass
+            if linea_audit:
+                try:
+                    res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea_audit, 'language': 'tr'}).json()
+                    for m in res.get('matches', []):
+                        bad = linea_audit[m['offset']:m['offset']+m['length']]
+                        if len(bad.strip()) <= 1: continue
+                        
+                        sug = f" (Try: **{m['replacements'][0]['value']}**)" if m['replacements'] else ""
+                        to_highlight.append(bad)
+                        alertas.append(f"❌ **Grammar/Spelling:** Issue in '{bad}'.{sug}")
+                except: pass
 
             # --- RENDER ---
             if alertas:
                 with st.expander(f"Line {i} ⚠️ Issues found", expanded=True):
                     st.markdown(f"<div>{highlight_errors(linea, to_highlight)}</div>", unsafe_allow_html=True)
-                    st.markdown(f"<div class='translation-box'><b>English Context:</b> {translate_to_english(linea)}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div class='translation-box'><b>English Context:</b> {translate_to_english(linea_audit)}</div>", unsafe_allow_html=True)
                     for a in alertas: st.write(a)
             else:
                 st.success(f"Line {i} ✅ Perfect")
