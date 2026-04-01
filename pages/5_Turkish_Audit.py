@@ -115,6 +115,14 @@ if st.button("🚀 Run Turkish Audit"):
             if "  " in linea_audit:
                 alertas.append("❌ **Spacing:** Double space detected within the phrase.")
 
+            # --- REGLA: Alfabeto Turco (Bloqueo de letras no pertenecientes a las 29 oficiales) ---
+            # Q, W, X no existen en el alfabeto turco.
+            forbidden_chars = re.findall(r'[qwxQWX]', linea_audit)
+            if forbidden_chars:
+                unique_forbidden = sorted(list(set(forbidden_chars)))
+                alertas.append(f"❌ **Alphabet Error:** Characters {unique_forbidden} are not part of the 29 Turkish letters.")
+                to_highlight.extend(unique_forbidden)
+
             # --- REGLA: Inicio con punto ---
             if linea_audit.strip().startswith('.'):
                 alertas.append("❌ **Error [Format]:** Line starts with a dot. Please remove it.")
@@ -125,7 +133,8 @@ if st.button("🚀 Run Turkish Audit"):
                 "Ulkelere": "Ülkelere",
                 "sabir": "sabır",
                 "uygulalarından": "uygulamalarından",
-                "Adabımuaşerei": "Adabımuaşereti"
+                "Adabımuaşerei": "Adabımuaşereti",
+                "askim": "aşkım"
             }
             for err, fix in common_errors.items():
                 if err in linea_audit:
