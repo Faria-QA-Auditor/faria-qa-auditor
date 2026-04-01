@@ -63,14 +63,17 @@ def translate_to_english(text):
     except Exception:
         return "[Translation service temporarily unavailable]"
 
-# --- FUNCIÓN PARA RESALTAR ERRORES ---
+# --- PARCHE: Función highlight_errors mejorada ---
 def highlight_errors(text, words_to_mark):
     highlighted = text
     try:
-        for word in set(words_to_mark):
+        # Ordenamos por longitud para evitar el efecto dálmata en sub-palabras
+        for word in sorted(set(words_to_mark), key=len, reverse=True):
             if word and len(word.strip()) > 0:
                 clean_word = re.escape(word.strip())
-                highlighted = re.sub(f"({clean_word})", r"<span class='highlight'>\1</span>", highlighted)
+                # Resaltado con límites de palabra para precisión
+                pattern = rf"({clean_word})"
+                highlighted = re.sub(pattern, r"<span class='highlight'>\1</span>", highlighted)
     except:
         pass
     return highlighted
@@ -109,7 +112,6 @@ if st.button("🚀 Run Arabic Audit"):
             status_text = st.empty()
 
             for i, linea in enumerate(lineas, 1):
-                # Actualización visual
                 progress_bar.progress(i / len(lineas))
                 status_text.text(f"Auditing line {i} of {len(lineas)}...")
 
@@ -119,47 +121,51 @@ if st.button("🚀 Run Arabic Audit"):
                 if "hide details" in linea_lower: continue
 
                 if "show details" in linea_lower:
-                    st.markdown(f"""
-                        <div class='db-info-box'>
-                            Line {i} ℹ️ <b>'Show details' detected:</b> There is hidden information in this line. 
-                            Please verify the source database content.
-                        </div>
-                    """, unsafe_allow_html=True)
+                    st.markdown(f"""<div class='db-info-box'>Line {i} ℹ️ <b>'Show details' detected:</b> Verify source database content.</div>""", unsafe_allow_html=True)
                     continue
 
                 alertas_finales = []
                 words_to_highlight = []
+                linea_audit = linea
+
+                # --- REGLA: Símbolos de Sublime (Pares al inicio) ---
+                sublime_tags = ['{{', '%%', '??', '$$', '<<', '##', '!!', '[[', '@@', '&&', '<br/>', '**']
+                for tag in sublime_tags:
+                    if tag in linea:
+                        # Triple check: evitar más de 2 símbolos seguidos
+                        triple_check = tag + tag[0] if len(tag) == 2 else tag
+                        if not linea.startswith(tag) or (len(tag) == 2 and linea.startswith(triple_check)):
+                            alertas_finales.append(f"⚠️ **Format:** Symbol '{tag}' must be a PAIR at the START of the line.")
+                        linea_audit = linea_audit.replace(tag, "")
+
+                # --- REGLA: Doble Espacio ---
+                if "  " in linea_audit:
+                    alertas_finales.append("❌ **Spacing:** Double space detected within the phrase.")
                 
-                # Reglas Manuales (Tienen prioridad)
-                if re.search(r'[,;]', linea):
+                # --- REGLAS MANUALES ÁRABE ---
+                if re.search(r'[,;]', linea_audit):
                     alertas_finales.append("⚠️ **Warning [Punctuation]:** Found western symbols (use Arabic ، o ؛).")
                 
-                if "األدب" in linea:
+                if "األدب" in linea_audit:
                     alertas_finales.append("❌ **Error [Orthography]:** Missing Hamza. Use 'الأدب'.")
                     words_to_highlight.append("األدب")
 
-                # API LanguageTool con protecciones de redundancia
+                # API LanguageTool
                 try:
-                    res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea, 'language': 'ar'}, timeout=5).json()
+                    res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea_audit, 'language': 'ar'}, timeout=5).json()
                     for m in res.get('matches', []):
                         offset, length = m['offset'], m['length']
-                        bad_word = linea[offset:offset+length]
+                        bad_word = linea_audit[offset:offset+length]
                         
-                        if bad_word.lower() in ["show", "details", "hide"]: continue
-                        
-                        # PROTECCIÓN 1: Si la palabra ya fue marcada por una regla manual, no repetirla
+                        if bad_word.lower() in ["show", "details", "hide"] or len(bad_word.strip()) <= 1: continue
                         if bad_word in words_to_highlight: continue
                         
                         sug_text = ""
                         if m['replacements']:
                             best_sug = m['replacements'][0]['value']
-                            
-                            # PROTECCIÓN 2: Si la sugerencia es igual a la palabra original, ignorar alerta
-                            if best_sug.strip() == bad_word.strip():
-                                continue
-                                
-                            sug_translation = translate_to_english(best_sug)
-                            sug_text = f" (Try: **{best_sug}** → *'{sug_translation}'*)"
+                            if best_sug.strip() != bad_word.strip():
+                                sug_translation = translate_to_english(best_sug)
+                                sug_text = f" (Try: **{best_sug}** → *'{sug_translation}'*)"
                         
                         words_to_highlight.append(bad_word)
                         bad_word_trans = translate_to_english(bad_word)
