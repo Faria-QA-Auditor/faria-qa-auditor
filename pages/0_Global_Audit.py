@@ -6,17 +6,17 @@ import unicodedata
 # 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(page_title="Global Languages Auditor", page_icon="🌍", layout="centered")
 
-# --- CSS CORPORATIVO FARIA (FUCSIA) ---
+# --- CSS PERSONALIZADO (MORADO FARIA) ---
 st.markdown("""
     <style>
     .stButton>button { 
-        width: 100%; border-radius: 12px; background-color: #e91e63; 
+        width: 100%; border-radius: 12px; background-color: #4a148c; 
         color: white; font-weight: bold; height: 3em; border: none;
     }
-    .stButton>button:hover { background-color: #d81b60; color: white; }
-    .stProgress > div > div > div > div { background-color: #e91e63; }
+    .stButton>button:hover { background-color: #6a1b9a; color: white; }
+    .stProgress > div > div > div > div { background-color: #4a148c; }
     .translation-box { 
-        background-color: #f8f9fa; border-left: 5px solid #e91e63; 
+        background-color: #f8f9fa; border-left: 5px solid #4a148c; 
         padding: 12px; margin: 10px 0; font-style: italic; color: #333;
     }
     .db-info-box { 
@@ -47,18 +47,14 @@ def highlight_errors(text, words):
         
         clean_word = re.escape(word.strip())
         
-        # Lógica mejorada: Si el error es una letra sola (como 'b' o 'd') o una numeración (4.d.)
-        # solo resaltamos la primera coincidencia exacta para no marcar todo el párrafo.
+        # Lógica de parche: Evita el "efecto dálmata" en letras sueltas o numeraciones
         if len(word.strip()) <= 2 or "." in word:
-            # Buscamos la palabra rodeada de espacios o al inicio (Word Boundaries)
             pattern = rf"(?i)\b{clean_word}\b"
             if re.search(pattern, highlighted):
                 highlighted = re.sub(pattern, rf"<span class='highlight'>{word}</span>", highlighted, count=1)
             else:
-                # Si no tiene bordes claros (ej: 4.d.), usamos reemplazo simple limitado a 1
                 highlighted = highlighted.replace(word, f"<span class='highlight'>{word}</span>", 1)
         else:
-            # Para palabras normales, resaltamos todas las ocurrencias
             highlighted = re.sub(f"({clean_word})", r"<span class='highlight'>\1</span>", highlighted, flags=re.IGNORECASE)
     return highlighted
 
@@ -96,30 +92,41 @@ if st.button("🚀 Run Global Audit"):
             status_text.text(f"Auditing line {i} of {len(lineas)}...")
             
             linea_lower = linea.lower()
-
-            # --- FILTRO 1: BOTONES DE BASE DE DATOS (Solución a imagen e7d17b) ---
             if "hide details" in linea_lower: continue
-            
             if "show details" in linea_lower:
                 st.markdown(f"<div class='db-info-box'>Line {i} ℹ️ <b>'Show details' detected:</b> Verify database content.</div>", unsafe_allow_html=True)
                 continue
 
-            # --- FILTRO 2: CORRECCIÓN PARA 'MANANA' (Solución a imagen e7d196) ---
-            linea_audit = re.sub(r'\bmanana\b', 'mañana', linea, flags=re.IGNORECASE)
-
             alertas = []
             to_highlight = []
+            linea_audit = linea
 
+            # --- REGLA: SÍMBOLOS DE SUBLIME (Validación de posición y pares) ---
+            tags = ['{{', '%%', '??', '$$', '<<', '##', '!!', '[[', '@@', '&&', '<br/>', '**']
+            for tag in tags:
+                if tag in linea:
+                    # Comprobar si es un par exacto al inicio (evita $$$ o tag en medio)
+                    double_tag = tag + tag[0] if len(tag) == 2 else tag
+                    if not linea.startswith(tag) or (len(tag) == 2 and linea.startswith(double_tag)):
+                        alertas.append(f"⚠️ **Format:** Symbol '{tag}' must be a PAIR at the START of the line.")
+                    # Limpiar el tag para que no interfiera con la gramática
+                    linea_audit = linea_audit.replace(tag, "")
+
+            # --- REGLA: DOBLE ESPACIO ---
+            if "  " in linea_audit:
+                alertas.append("❌ **Spacing:** Double space detected within the sentence.")
+
+            # --- FILTRO MAÑANA ---
+            linea_audit = re.sub(r'\bmanana\b', 'mañana', linea_audit, flags=re.IGNORECASE)
+
+            # --- API LANGUAGETOOL ---
             try:
                 res = requests.post('https://api.languagetool.org/v2/check', 
                                     data={'text': linea_audit, 'language': 'auto'}, timeout=8).json()
                 
                 for m in res.get('matches', []):
-                    bad = linea[m['offset']:m['offset']+m['length']]
-                    
+                    bad = linea_audit[m['offset']:m['offset']+m['length']]
                     if bad.lower() in ["show", "details", "hide"]: continue
-                    
-                    # Filtro de redundancia: No marcar si la sugerencia es igual (Solución a imagen e67401)
                     if m['replacements']:
                         best_sug = m['replacements'][0]['value']
                         if best_sug.strip() == bad.strip(): continue
