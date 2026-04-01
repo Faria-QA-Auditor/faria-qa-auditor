@@ -122,7 +122,7 @@ if st.button("🚀 Run French Audit"):
                     r_id = m.get('rule', {}).get('id', '')
                     
                     # Filtros de ruido
-                    if any(x in r_id for x in ["FRENCH_WHITESPACE", "FR_PUNCTUATION", "UPPERCASE_SENTENCE_START", "MORFOLOGIK_RULE_FR_FR"]):
+                    if any(x in r_id for x in ["FRENCH_WHITESPACE", "FR_PUNCTUATION", "MORFOLOGIK_RULE_FR_FR"]):
                         continue
 
                     bad = unicodedata.normalize('NFC', linea_audit[m['offset']:m['offset']+m['length']])
