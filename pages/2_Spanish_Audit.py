@@ -6,7 +6,7 @@ import unicodedata
 # 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(page_title="Spanish Standards Auditor", page_icon="🇪🇸", layout="centered")
 
-# --- CSS PERSONALIZADO ---
+# --- CSS PERSONALIZADO (MORADO FARIA) ---
 st.markdown("""
     <style>
     .stButton>button {
@@ -18,6 +18,7 @@ st.markdown("""
         font-weight: bold;
         border: none;
     }
+    .stButton>button:hover { background-color: #6a1b9a; color: white; }
     .stProgress > div > div > div > div {
         background-color: #4a148c;
     }
@@ -28,7 +29,6 @@ st.markdown("""
         margin: 10px 0;
         font-style: italic;
     }
-    /* Estilo para el Recuadro Azul de Base de Datos */
     .db-info-box {
         background-color: #e3f2fd;
         border-left: 5px solid #2196f3;
@@ -57,11 +57,18 @@ def translate_to_english(text):
         return res[0][0][0]
     except: return "[Translation N/A]"
 
+# PARCHE: Función highlight_errors mejorada para evitar el "efecto dálmata"
 def highlight_errors(text, words):
     highlighted = text
-    for word in set(words):
+    for word in sorted(set(words), key=len, reverse=True):
         if word and len(word.strip()) > 0:
-            highlighted = re.sub(f"({re.escape(word)})", r"<span class='highlight'>\1</span>", highlighted)
+            clean_word = re.escape(word.strip())
+            # Usamos límites de palabra (\b) para mayor precisión
+            pattern = rf"(?i)\b{clean_word}\b"
+            if len(word) <= 2 or "." in word:
+                highlighted = highlighted.replace(word, f"<span class='highlight'>{word}</span>", 1)
+            else:
+                highlighted = re.sub(pattern, rf"<span class='highlight'>{word}</span>", highlighted)
     return highlighted
 
 # 2. HEADER
@@ -101,41 +108,47 @@ if st.button("🚀 Run Spanish Audit"):
 
             linea_lower = linea.lower().strip()
 
-            # --- REGLA: HIDE DETAILS (Ignorar por completo) ---
-            if "hide details" in linea_lower:
-                continue
+            if "hide details" in linea_lower: continue
 
-            # --- REGLA: SHOW DETAILS (Recuadro Azul e Interrumpir Auditoría) ---
             if "show details" in linea_lower:
-                st.markdown(f"""
-                    <div class='db-info-box'>
-                        Line {i} ℹ️ <b>'Show details' detected:</b> There is hidden information in this line that was not fully expanded. 
-                        Please verify the missing content in the source database.
-                    </div>
-                """, unsafe_allow_html=True)
+                st.markdown(f"""<div class='db-info-box'>Line {i} ℹ️ <b>'Show details' detected:</b> Verify source database content.</div>""", unsafe_allow_html=True)
                 continue
 
             alertas = []
             to_highlight = []
+            linea_audit = linea
 
-            # --- REGLAS MANUALES ---
-            if re.search(r'\b(es|son|fue|fueron)\b\s+\w+(ado|ido|ada|ida)\b', linea, re.I):
-                alertas.append("⚠️ **Style Suggestion:** Passive voice detected. Consider using 'pasiva refleja' (e.g., 'se realiza').")
-            if re.search(r'\d+%', linea):
+            # --- REGLA: Símbolos de Sublime (Validación y Limpieza) ---
+            sublime_tags = ['{{', '%%', '??', '$$', '<<', '##', '!!', '[[', '@@', '&&', '<br/>', '**']
+            for tag in sublime_tags:
+                if tag in linea:
+                    # Debe estar al inicio y ser solo un par (no triple símbolo)
+                    triple_check = tag + tag[0] if len(tag) == 2 else tag
+                    if not linea.startswith(tag) or (len(tag) == 2 and linea.startswith(triple_check)):
+                        alertas.append(f"⚠️ **Format:** Symbol '{tag}' must be a PAIR at the START of the line.")
+                    linea_audit = linea_audit.replace(tag, "")
+
+            # --- REGLA: Doble Espacio ---
+            if "  " in linea_audit:
+                alertas.append("❌ **Spacing:** Double space detected within the sentence.")
+
+            # --- REGLAS MANUALES EXISTENTES ---
+            if re.search(r'\b(es|son|fue|fueron)\b\s+\w+(ado|ido|ada|ida)\b', linea_audit, re.I):
+                alertas.append("⚠️ **Style Suggestion:** Passive voice detected. Consider using 'pasiva refleja'.")
+            
+            match_pct = re.search(r'\d+%', linea_audit)
+            if match_pct:
                 alertas.append("❌ **Punctuation Error:** Missing space before % (e.g., '10 %').")
-                to_highlight.append(re.search(r'\d+%', linea).group())
+                to_highlight.append(match_pct.group())
 
-            # --- API LANGUAGETOOL (Traducción de Alertas) ---
+            # --- API LANGUAGETOOL ---
             try:
-                res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea, 'language': 'es'}).json()
+                res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea_audit, 'language': 'es'}).json()
                 for m in res.get('matches', []):
-                    bad = linea[m['offset']:m['offset']+m['length']]
-                    # Doble validación para no marcar palabras de la DB
+                    bad = linea_audit[m['offset']:m['offset']+m['length']]
                     if bad.lower() in ["show", "details", "hide"]: continue
                     
                     to_highlight.append(bad)
-                    
-                    # Mapeo a Inglés
                     msg_orig = m['message'].lower()
                     if "ortografía" in msg_orig or "spelling" in msg_orig: msg_en = "Spelling error"
                     elif "gramática" in msg_orig or "grammar" in msg_orig: msg_en = "Grammatical issue"
