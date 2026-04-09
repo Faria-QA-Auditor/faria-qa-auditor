@@ -19,6 +19,16 @@ st.markdown("""
         background-color: #fff3cd; font-weight: bold; color: #d9534f;
         text-decoration: underline; padding: 0 2px;
     }
+    /* Estilo para el Recuadro Azul de Show Details */
+    .db-info-box {
+        background-color: #e3f2fd;
+        border-left: 5px solid #2196f3;
+        padding: 15px;
+        color: #0c5460;
+        margin: 10px 0;
+        border-radius: 4px;
+        font-weight: 500;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -65,25 +75,32 @@ if st.button("🚀 Run English Audit"):
             progress_bar.progress(i / len(lineas))
             status_text.text(f"Auditing line {i}...")
             
+            # --- MANEJO DE COMANDOS ---
             linea_temp = re.sub(rf"(?i)(?<=[a-zA-Záéíóúüñ])(hide details|show details)", r" \1", linea)
+            is_show = "show details" in linea_temp.lower()
+            is_hide = "hide details" in linea_temp.lower()
+            
+            # Mostrar cuadro azul si hay "Show details"
+            if is_show:
+                st.markdown(f"<div class='db-info-box'>Line {i} ℹ️ <b>'Show details' detected:</b> Review for potentially hidden text.</div>", unsafe_allow_html=True)
+
             alertas = []
             to_highlight = []
             
             linea_audit = re.sub(r'^(\{\{|%%|\?\?|\$\$|<<|##|!!|\[\[|@@|&&|\*\*|<br/>)', '', linea_temp)
             linea_clean = re.sub(rf"(?i)show details|hide details", "", linea_audit).strip()
 
-            if not linea_clean: continue
+            if not linea_clean and not (is_show or is_hide): continue
 
-            # --- REGLA: HARD RETURNS (Evitando Títulos) ---
-            # Un título suele empezar con números (1.1) o ser muy corto.
+            # --- REGLA: HARD RETURNS (Excluyendo Títulos y Comandos) ---
             is_title = re.match(r'^\d+(\.\d+)*', linea_clean) or len(linea_clean.split()) < 5
             
-            if not is_title:
+            if not is_title and not (is_show or is_hide):
                 if not linea_clean.endswith(('.', ':', '?', '!', '"', '”', '…')):
                     alertas.append("⚠️ **Hard Return:** Line ends without punctuation (possible cut).")
-                    # Resaltamos la última palabra para indicar el error visualmente
-                    last_word = linea_clean.split()[-1].strip('.,!?:;')
-                    to_highlight.append(last_word)
+                    if linea_clean.split():
+                        last_word = linea_clean.split()[-1].strip('.,!?:;')
+                        to_highlight.append(last_word)
 
             # --- REGLA: Símbolos de Sublime ---
             sublime_tags = ['{{', '%%', '??', '$$', '<<', '##', '!!', '[[', '@@', '&&', '<br/>', '**']
@@ -124,7 +141,7 @@ if st.button("🚀 Run English Audit"):
                 with st.expander(f"Line {i} ⚠️ Issues found", expanded=True):
                     st.markdown(f"<div>{highlight_errors(linea, to_highlight)}</div>", unsafe_allow_html=True)
                     for a in alertas: st.write(a)
-            else:
+            elif not is_show: 
                 st.success(f"Line {i} ✅ Perfect")
 
         status_text.text("Audit complete!")
