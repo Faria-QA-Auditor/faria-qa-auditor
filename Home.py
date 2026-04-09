@@ -59,14 +59,14 @@ with col1:
 with col2:
     st.markdown("### 🛠️ Quick Start Guide")
     st.info("""
-    1.  **Navigate:** Use the **Sidebar** on the left to select the specific language auditor or the general language mode.
+    1.  **Navigate:** Use the **Sidebar** on the left to select the specific language auditor or the general languages mode.
     2.  **Input:** Paste your raw data.
     3.  **Process:** Click the 'Run Audit' button.
     4.  **Review:** Examine the yellow warnings for errors or the **blue boxes** for missing information.
     """)
     
     st.markdown("### 🌍 Linguistic Scope")
-    st.success("English • Spanish • French • Arabic • Turkish • General Language")
+    st.success("English • Spanish • French • Arabic • Turkish • General Languages")
 
 st.write("---")
 st.markdown("<div style='text-align: center; color: #888;'>Standards and Services | Faria Education Group | 2026</div>", unsafe_allow_html=True)
