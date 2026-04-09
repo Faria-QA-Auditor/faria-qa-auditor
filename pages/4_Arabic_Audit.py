@@ -4,7 +4,7 @@ import re
 import unicodedata
 
 # 1. CONFIGURACIÓN DE PÁGINA
-st.set_page_config(page_title="Arabic Auditor", page_icon="🇸🇦", layout="centered")
+st.set_page_config(page_title="Arabic Auditor", page_icon="🇦🇪", layout="centered")
 
 # --- CSS PROFESIONAL ---
 st.markdown("""
