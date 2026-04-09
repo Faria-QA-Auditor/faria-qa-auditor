@@ -78,57 +78,73 @@ if st.button("🚀 Run English Audit"):
             progress_bar.progress(i / len(lineas))
             status_text.text(f"Auditing line {i} of {len(lineas)}...")
             
-            if linea.lower().strip() == "hide details": continue
-            if "show details" in linea.lower():
+            # --- HOTFIX: Separar comandos pegados antes de auditar ---
+            linea_temp = re.sub(rf"(?i)(?<=[a-zA-Záéíóúüñ])(hide details|show details)", r" \1", linea)
+            
+            if "show details" in linea_temp.lower():
                 st.info(f"Line {i} ℹ️ **'Show details' detected.**")
-                continue
 
             alertas = []
             to_highlight = []
-            linea_audit = linea
-
-            # --- REGLA: Símbolos de Sublime (Validación y Limpieza) ---
-            sublime_tags = ['{{', '%%', '??', '$$', '<<', '##', '!!', '[[', '@@', '&&', '<br/>', '**']
             
+            # Limpieza para auditoría (Sin comandos ni símbolos de Sublime)
+            linea_audit = re.sub(r'^(\{\{|%%|\?\?|\$\$|<<|##|!!|\[\[|@@|&&|\*\*|<br/>)', '', linea_temp)
+            linea_clean = re.sub(rf"(?i)show details|hide details", "", linea_audit).strip()
+
+            if not linea_clean: continue
+
+            # --- REGLA: HARD RETURNS ---
+            if len(linea_clean) > 10 and not linea_clean.endswith(('.', ':', '?', '!', '"', '”', '…')):
+                alertas.append("⚠️ **Hard Return:** This line seems cut or ends without proper punctuation.")
+
+            # --- REGLA: Símbolos de Sublime (Validación) ---
+            sublime_tags = ['{{', '%%', '??', '$$', '<<', '##', '!!', '[[', '@@', '&&', '<br/>', '**']
             for tag in sublime_tags:
                 if tag in linea:
-                    double_tag = tag + tag[0] if len(tag) < 3 else tag
+                    double_tag = tag + tag[0] if len(tag) == 2 else tag
                     if not linea.startswith(tag) or (len(tag) == 2 and linea.startswith(double_tag)):
                         alertas.append(f"⚠️ **Format:** Symbol '{tag}' must be a PAIR at the START of the line.")
-                    linea_audit = linea_audit.replace(tag, "")
 
             # --- REGLA: Doble Espacio ---
             if "  " in linea_audit:
                 alertas.append("❌ **Spacing:** Double space detected.")
 
-            # --- REGLA 1: Dialecto (Manual checks) ---
+            # --- REGLA 1: Dialecto (Manual checks con excepciones para US) ---
             if "US" in dialect:
-                if re.search(r'\b\w+ise\b', linea_audit): 
-                    alertas.append("⚠️ **Dialect:** Use '-ize' for US English.")
-                if re.search(r'\b\w+our\b', linea_audit):
+                # Buscar palabras -ise que NO sean excepciones (revise, supervise, etc)
+                ise_matches = re.findall(r'\b\w+ise\b', linea_clean, re.IGNORECASE)
+                for word in ise_matches:
+                    if word.lower() not in ["revise", "supervise", "exercise", "surprise", "expertise", "promise", "advise"]:
+                        alertas.append(f"⚠️ **Dialect:** Use '-ize' instead of '{word}' for US English.")
+                        to_highlight.append(word)
+                
+                if re.search(r'\b\w+our\b', linea_clean, re.IGNORECASE):
                     alertas.append("⚠️ **Dialect:** Use '-or' for US English.")
             else: # UK
-                if "color" in linea_audit.lower() or "behavior" in linea_audit.lower():
+                if "color" in linea_clean.lower() or "behavior" in linea_clean.lower():
                     alertas.append("⚠️ **Dialect:** US spelling detected. Use '-our' for UK.")
 
-            # --- API LANGUAGETOOL (Con bloqueo de Oxford Spelling) ---
+            # --- API LANGUAGETOOL ---
             lang_code = "en-US" if "US" in dialect else "en-GB"
             try:
-                # Deshabilitamos las reglas de Oxford para que acepte -ise en UK
                 payload = {
-                    'text': linea_audit.strip(), 
+                    'text': linea_clean, 
                     'language': lang_code,
                     'disabledRules': 'MCI_OXFORD_SPELLING_Z_NOT_S,OXFORD_SPELLING_Z_NOT_S'
                 }
                 res = requests.post('https://api.languagetool.org/v2/check', data=payload).json()
                 
                 for m in res.get('matches', []):
-                    # Filtro de seguridad por si la API ignora el payload
                     if 'OXFORD' in m['rule']['id'] or 'Z_NOT_S' in m['rule']['id']:
                         continue
                         
-                    bad = linea_audit[m['offset']:m['offset']+m['length']]
-                    if bad.strip() and bad.lower() not in ["show", "details"]:
+                    bad = linea_clean[m['offset']:m['offset']+m['length']]
+                    
+                    # Ignorar falsos positivos de dialecto en palabras raíz
+                    if "US" in dialect and bad.lower() in ["revise", "supervise", "exercise", "surprise"]:
+                        continue
+                        
+                    if bad.strip():
                         to_highlight.append(bad)
                         alertas.append(f"❌ **{m['rule']['category']['name']}:** {m['message']}")
             except: pass
