@@ -4,7 +4,7 @@ import re
 import unicodedata
 
 # 1. CONFIGURACIÓN DE PÁGINA
-st.set_page_config(page_title="Global Languages Auditor", page_icon="🌍", layout="centered")
+st.set_page_config(page_title="General Languages Auditor", page_icon="🌍", layout="centered")
 
 # --- CSS PERSONALIZADO (MORADO FARIA) ---
 st.markdown("""
@@ -41,19 +41,12 @@ def translate_to_english(text):
 
 def highlight_errors(text, words):
     highlighted = text
-    # Ordenar por longitud descendente para evitar conflictos de reemplazo
     for word in sorted(set(words), key=len, reverse=True):
         if not word or len(word.strip()) == 0: continue
-        
         clean_word = re.escape(word.strip())
-        
-        # Lógica de parche: Evita el "efecto dálmata" en letras sueltas o numeraciones
         if len(word.strip()) <= 2 or "." in word:
             pattern = rf"(?i)\b{clean_word}\b"
-            if re.search(pattern, highlighted):
-                highlighted = re.sub(pattern, rf"<span class='highlight'>{word}</span>", highlighted, count=1)
-            else:
-                highlighted = highlighted.replace(word, f"<span class='highlight'>{word}</span>", 1)
+            highlighted = re.sub(pattern, rf"<span class='highlight'>{word}</span>", highlighted, count=1)
         else:
             highlighted = re.sub(f"({clean_word})", r"<span class='highlight'>\1</span>", highlighted, flags=re.IGNORECASE)
     return highlighted
@@ -91,41 +84,53 @@ if st.button("🚀 Run Global Audit"):
             progress_bar.progress(i / len(lineas))
             status_text.text(f"Auditing line {i} of {len(lineas)}...")
             
-            linea_lower = linea.lower()
-            if "hide details" in linea_lower: continue
-            if "show details" in linea_lower:
+            # --- MANEJO DE COMANDOS ---
+            linea_temp = re.sub(rf"(?i)(?<=[a-zA-Záéíóúüñ])(hide details|show details)", r" \1", linea)
+            is_show = "show details" in linea_temp.lower()
+            is_hide = "hide details" in linea_temp.lower()
+            
+            if is_show:
                 st.markdown(f"<div class='db-info-box'>Line {i} ℹ️ <b>'Show details' detected:</b> Verify database content.</div>", unsafe_allow_html=True)
-                continue
 
             alertas = []
             to_highlight = []
-            linea_audit = linea
+            
+            # Limpiar símbolos para auditoría
+            linea_audit = re.sub(r'^(\{\{|%%|\?\?|\$\$|<<|##|!!|\[\[|@@|&&|\*\*|<br/>)', '', linea_temp)
+            linea_clean = re.sub(rf"(?i)show details|hide details", "", linea_audit).strip()
 
-            # --- REGLA: SÍMBOLOS DE SUBLIME (Validación de posición y pares) ---
+            if not linea_clean and not (is_show or is_hide): continue
+
+            # --- REGLA: HARD RETURNS (Líneas cortadas) ---
+            # Excluimos títulos o líneas muy breves
+            is_title = re.match(r'^\d+(\.\d+)*', linea_clean) or len(linea_clean.split()) < 5
+            
+            if not is_title and not (is_show or is_hide):
+                # Validar puntuación final multilingüe
+                if not linea_clean.endswith(('.', ':', '?', '!', '"', '”', '»', '…')):
+                    alertas.append("⚠️ **Hard Return:** Line ends without proper punctuation (possible cut).")
+                    if linea_clean.split():
+                        to_highlight.append(linea_clean.split()[-1].strip('.,!?:;'))
+
+            # --- REGLA: SÍMBOLOS DE SUBLIME ---
             tags = ['{{', '%%', '??', '$$', '<<', '##', '!!', '[[', '@@', '&&', '<br/>', '**']
             for tag in tags:
                 if tag in linea:
-                    # Comprobar si es un par exacto al inicio (evita $$$ o tag en medio)
                     double_tag = tag + tag[0] if len(tag) == 2 else tag
                     if not linea.startswith(tag) or (len(tag) == 2 and linea.startswith(double_tag)):
-                        alertas.append(f"⚠️ **Format:** Symbol '{tag}' must be a PAIR at the START of the line.")
-                    # Limpiar el tag para que no interfiera con la gramática
-                    linea_audit = linea_audit.replace(tag, "")
+                        alertas.append(f"⚠️ **Format:** Symbol '{tag}' must be at the START.")
 
             # --- REGLA: DOBLE ESPACIO ---
             if "  " in linea_audit:
-                alertas.append("❌ **Spacing:** Double space detected within the sentence.")
-
-            # --- FILTRO MAÑANA ---
-            linea_audit = re.sub(r'\bmanana\b', 'mañana', linea_audit, flags=re.IGNORECASE)
+                alertas.append("❌ **Spacing:** Double space detected.")
 
             # --- API LANGUAGETOOL ---
             try:
                 res = requests.post('https://api.languagetool.org/v2/check', 
-                                    data={'text': linea_audit, 'language': 'auto'}, timeout=8).json()
+                                    data={'text': linea_clean, 'language': 'auto'}, timeout=8).json()
                 
                 for m in res.get('matches', []):
-                    bad = linea_audit[m['offset']:m['offset']+m['length']]
+                    bad = linea_clean[m['offset']:m['offset']+m['length']]
                     if bad.lower() in ["show", "details", "hide"]: continue
                     if m['replacements']:
                         best_sug = m['replacements'][0]['value']
@@ -135,9 +140,8 @@ if st.button("🚀 Run Global Audit"):
                         sug_text = ""
 
                     to_highlight.append(bad)
-                    alertas.append(f"❌ **Grammar/Spelling:** Issue in '{bad}'{sug_text}")
-            except:
-                pass
+                    alertas.append(f"❌ **{m['rule']['category']['name']}:** {m['message']}{sug_text}")
+            except: pass
 
             # --- RENDERIZADO ---
             if alertas:
@@ -146,10 +150,10 @@ if st.button("🚀 Run Global Audit"):
                     st.markdown(f"<div style='background: white; padding: 15px; border: 1px solid #ddd; border-radius: 8px;'>{linea_html}</div>", unsafe_allow_html=True)
                     st.markdown(f"<div class='translation-box'><b>English Context:</b> {translate_to_english(linea)}</div>", unsafe_allow_html=True)
                     for a in alertas: st.write(a)
-            else:
+            elif not is_show:
                 st.success(f"Line {i} ✅ Perfect")
 
-        status_text.text("Global Audit complete!")
+        status_text.text("General Audit complete!")
 
 st.write("---")
 st.caption("Standards and Services Team | Faria Education Group")
