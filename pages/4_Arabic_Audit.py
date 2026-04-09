@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import re
+import unicodedata
 
 # 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(page_title="Arabic Auditor", page_icon="🇸🇦", layout="centered")
@@ -17,7 +18,6 @@ st.markdown("""
         font-weight: bold;
         border: none;
     }
-    /* Barra de Progreso Morada */
     .stProgress > div > div > div > div {
         background-color: #4a148c;
     }
@@ -33,7 +33,6 @@ st.markdown("""
         font-style: italic;
         color: #333;
     }
-    /* Estilo para el Recuadro Azul de Base de Datos */
     .db-info-box {
         background-color: #e3f2fd;
         border-left: 5px solid #2196f3;
@@ -53,7 +52,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- FUNCIÓN DE TRADUCCIÓN SEGURA ---
+# --- FUNCIONES DE SOPORTE ---
 def translate_to_english(text):
     if not text or text.strip() == "": return ""
     try:
@@ -61,21 +60,17 @@ def translate_to_english(text):
         res = requests.get(url, timeout=5).json()
         return res[0][0][0]
     except Exception:
-        return "[Translation service temporarily unavailable]"
+        return "[Translation N/A]"
 
-# --- PARCHE: Función highlight_errors mejorada ---
 def highlight_errors(text, words_to_mark):
     highlighted = text
     try:
-        # Ordenamos por longitud para evitar el efecto dálmata en sub-palabras
         for word in sorted(set(words_to_mark), key=len, reverse=True):
             if word and len(word.strip()) > 0:
                 clean_word = re.escape(word.strip())
-                # Resaltado con límites de palabra para precisión
                 pattern = rf"({clean_word})"
                 highlighted = re.sub(pattern, r"<span class='highlight'>\1</span>", highlighted)
-    except:
-        pass
+    except: pass
     return highlighted
 
 # 2. HEADER
@@ -88,16 +83,12 @@ st.markdown("<h2 style='color: #444;'>Arabic Standards Auditor</h2>", unsafe_all
 st.markdown("</div>", unsafe_allow_html=True)
 st.write("---")
 
-# 3. ENTRADA DE TEXTO Y CONTADOR (2500 Líneas)
+# 3. ENTRADA DE TEXTO
 texto_input = st.text_area("Paste Arabic standards here:", height=300)
 
 if texto_input:
     lineas_reales = [l for l in texto_input.split('\n') if l.strip()]
-    total_lines = len(lineas_reales)
-    st.markdown(f"**Line Count:** {total_lines} / 2500")
-    if total_lines > 2500:
-        st.error("⚠️ **Warning:** Document exceeds the 2,500-line limit.")
-    st.write("---")
+    st.markdown(f"**Line Count:** {len(lineas_reales)} / 2500")
 
 # 4. PROCESAMIENTO
 if st.button("🚀 Run Arabic Audit"):
@@ -106,8 +97,6 @@ if st.button("🚀 Run Arabic Audit"):
     else:
         try:
             lineas = [l.strip() for l in texto_input.split('\n') if l.strip()]
-            
-            # --- BARRA DE PROGRESO ---
             progress_bar = st.progress(0)
             status_text = st.empty()
 
@@ -115,83 +104,85 @@ if st.button("🚀 Run Arabic Audit"):
                 progress_bar.progress(i / len(lineas))
                 status_text.text(f"Auditing line {i} of {len(lineas)}...")
 
-                linea_lower = linea.lower().strip()
+                # --- MANEJO DE COMANDOS Y ESPACIADO ---
+                # Parche para asegurar que show/hide details no estén pegados al texto árabe
+                linea_temp = re.sub(rf"(?i)(?<=[^\x00-\x7F])(hide details|show details)", r" \1", linea)
+                is_show = "show details" in linea_temp.lower()
+                is_hide = "hide details" in linea_temp.lower()
 
-                # --- REGLA: HIDE/SHOW DETAILS ---
-                if "hide details" in linea_lower: continue
-
-                if "show details" in linea_lower:
-                    st.markdown(f"""<div class='db-info-box'>Line {i} ℹ️ <b>'Show details' detected:</b> Verify source database content.</div>""", unsafe_allow_html=True)
-                    continue
+                if is_show:
+                    st.markdown(f"<div class='db-info-box'>Line {i} ℹ️ <b>'Show details' detected:</b> Verify database content.</div>", unsafe_allow_html=True)
 
                 alertas_finales = []
                 words_to_highlight = []
-                linea_audit = linea
+                
+                # Limpieza de símbolos para auditoría
+                linea_audit = re.sub(r'^(\{\{|%%|\?\?|\$\$|<<|##|!!|\[\[|@@|&&|\*\*|<br/>)', '', linea_temp)
+                linea_clean = re.sub(rf"(?i)show details|hide details", "", linea_audit).strip()
 
-                # --- REGLA: Símbolos de Sublime (Pares al inicio) ---
+                if not linea_clean and not (is_show or is_hide): continue
+
+                # --- REGLA: HARD RETURNS (Líneas cortadas) ---
+                # Ignorar títulos numerados o líneas muy breves
+                is_title = re.match(r'^[\d\u0660-\u0669]+(\.[\d\u0660-\u0669]+)*', linea_clean) or len(linea_clean.split()) < 4
+                
+                if not is_title and not (is_show or is_hide):
+                    # Puntuación final incluyendo el punto árabe
+                    if not linea_clean.endswith(('.', ':', '؟', '!', '"', '”', '»', '…', '؛')):
+                        alertas_finales.append("⚠️ **Hard Return:** Line ends without proper punctuation (possible cut).")
+                        if linea_clean.split():
+                            words_to_highlight.append(linea_clean.split()[-1])
+
+                # --- REGLA: Símbolos de Sublime ---
                 sublime_tags = ['{{', '%%', '??', '$$', '<<', '##', '!!', '[[', '@@', '&&', '<br/>', '**']
                 for tag in sublime_tags:
                     if tag in linea:
-                        # Triple check: evitar más de 2 símbolos seguidos
                         triple_check = tag + tag[0] if len(tag) == 2 else tag
                         if not linea.startswith(tag) or (len(tag) == 2 and linea.startswith(triple_check)):
-                            alertas_finales.append(f"⚠️ **Format:** Symbol '{tag}' must be a PAIR at the START of the line.")
-                        linea_audit = linea_audit.replace(tag, "")
+                            alertas_finales.append(f"⚠️ **Format:** Symbol '{tag}' must be at the START.")
 
                 # --- REGLA: Doble Espacio ---
                 if "  " in linea_audit:
-                    alertas_finales.append("❌ **Spacing:** Double space detected within the phrase.")
-                
+                    alertas_finales.append("❌ **Spacing:** Double space detected.")
+
                 # --- REGLAS MANUALES ÁRABE ---
                 if re.search(r'[,;]', linea_audit):
-                    alertas_finales.append("⚠️ **Warning [Punctuation]:** Found western symbols (use Arabic ، o ؛).")
+                    alertas_finales.append("⚠️ **Punctuation:** Western symbols found (use Arabic '،' or '؛').")
                 
                 if "األدب" in linea_audit:
-                    alertas_finales.append("❌ **Error [Orthography]:** Missing Hamza. Use 'الأدب'.")
+                    alertas_finales.append("❌ **Orthography:** Missing Hamza. Use 'الأدب'.")
                     words_to_highlight.append("األدب")
 
-                # API LanguageTool
+                # --- API LANGUAGETOOL ---
                 try:
-                    res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea_audit, 'language': 'ar'}, timeout=5).json()
+                    res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea_clean, 'language': 'ar'}, timeout=5).json()
                     for m in res.get('matches', []):
-                        offset, length = m['offset'], m['length']
-                        bad_word = linea_audit[offset:offset+length]
-                        
+                        bad_word = linea_clean[m['offset']:m['offset']+m['length']]
                         if bad_word.lower() in ["show", "details", "hide"] or len(bad_word.strip()) <= 1: continue
-                        if bad_word in words_to_highlight: continue
                         
                         sug_text = ""
                         if m['replacements']:
                             best_sug = m['replacements'][0]['value']
                             if best_sug.strip() != bad_word.strip():
-                                sug_translation = translate_to_english(best_sug)
-                                sug_text = f" (Try: **{best_sug}** → *'{sug_translation}'*)"
+                                sug_text = f" (Try: **{best_sug}**)"
                         
                         words_to_highlight.append(bad_word)
-                        bad_word_trans = translate_to_english(bad_word)
-                        alertas_finales.append(f"❌ **Grammar/Spelling:** Issue in '{bad_word}' ('{bad_word_trans}').{sug_text}")
-                except:
-                    pass
+                        alertas_finales.append(f"❌ **Grammar/Spelling:** '{bad_word}'.{sug_text}")
+                except: pass
 
-                # Renderizado
-                header = f"Line {i}"
-                if not alertas_finales:
-                    st.success(f"{header} ✅ Perfect")
-                else:
-                    with st.expander(f"{header} ⚠️ Issues found", expanded=True):
+                # --- RENDERIZADO ---
+                if alertas_finales:
+                    with st.expander(f"Line {i} ⚠️ Issues found", expanded=True):
                         linea_html = highlight_errors(linea, words_to_highlight)
                         st.markdown(f"<div style='direction: rtl; text-align: right; background: #fff; padding: 15px; border: 1px solid #ddd; font-size: 18px;'>{linea_html}</div>", unsafe_allow_html=True)
-                        
-                        line_trans = translate_to_english(linea)
-                        st.markdown(f"<div class='translation-box'><b>Line Context:</b> {line_trans}</div>", unsafe_allow_html=True)
-                        
-                        for a in alertas_finales:
-                            st.write(a)
+                        st.markdown(f"<div class='translation-box'><b>Line Context:</b> {translate_to_english(linea)}</div>", unsafe_allow_html=True)
+                        for a in alertas_finales: st.write(a)
+                elif not is_show:
+                    st.success(f"Line {i} ✅ Perfect")
             
             status_text.text("Audit complete!")
-            
         except Exception as e:
-            st.error(f"An unexpected error occurred: {e}")
+            st.error(f"Error: {e}")
 
 st.write("---")
 st.caption("Standards and Services Team | Faria Education Group")
