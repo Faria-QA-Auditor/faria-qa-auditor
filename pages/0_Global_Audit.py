@@ -57,7 +57,7 @@ try:
     st.image("logo.jpg", width=250)
 except: 
     st.title("FARIA EDUCATION GROUP")
-st.markdown("<h2 style='color: #444;'>Global Languages Auditor</h2>", unsafe_allow_html=True)
+st.markdown("<h2 style='color: #444;'>General Languages Auditor</h2>", unsafe_allow_html=True)
 st.write("---")
 
 # 3. INPUT Y CONTADOR (2500 LÍNEAS)
@@ -72,7 +72,7 @@ if texto_raw:
         st.error("⚠️ **Warning:** Document exceeds the 2,500-line limit.")
 
 # 4. BOTÓN Y PROCESAMIENTO
-if st.button("🚀 Run Global Audit"):
+if st.button("🚀 Run General Audit"):
     if not texto_raw.strip():
         st.warning("Please paste some text first.")
     else:
