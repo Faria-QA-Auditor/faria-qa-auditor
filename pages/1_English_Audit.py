@@ -61,14 +61,6 @@ if texto_input:
     st.markdown(f"**Line Count:** {len(lineas_reales)} / 2500")
     st.write("---")
 
-# LISTA MAESTRA DE EXCEPCIONES (Raíces léxicas fijas)
-EXCEPTIONS_LIST = [
-    "advise", "apprise", "arise", "chastise", "comprise", "compromise", 
-    "demise", "despise", "devise", "disguise", "exercise", "exorcise", 
-    "improvise", "incise", "merchandise", "premise", "revise", 
-    "supervise", "surmise", "surprise", "televise", "expertise", "promise"
-]
-
 if st.button("🚀 Run English Audit"):
     if not texto_input.strip():
         st.warning("Please paste some text first.")
@@ -82,6 +74,7 @@ if st.button("🚀 Run English Audit"):
             progress_bar.progress(i / len(lineas))
             status_text.text(f"Auditing line {i}...")
             
+            # --- MANEJO DE COMANDOS ---
             linea_temp = re.sub(rf"(?i)(?<=[a-zA-Záéíóúüñ])(hide details|show details)", r" \1", linea)
             is_show = "show details" in linea_temp.lower()
             is_hide = "hide details" in linea_temp.lower()
@@ -111,28 +104,24 @@ if st.button("🚀 Run English Audit"):
                 if tag in linea and not (linea.startswith(tag) or (len(tag) == 2 and linea.startswith(tag + tag[0]))):
                     alertas.append(f"⚠️ **Format:** Symbol '{tag}' must be at the START.")
 
-            # --- REGLA: Dialecto US (Excepciones Aplicadas) ---
-            if "US" in dialect:
-                ise_words = re.findall(r'\b\w+ise\b', linea_clean, re.IGNORECASE)
-                for word in ise_words:
-                    if word.lower() not in EXCEPTIONS_LIST:
-                        alertas.append(f"⚠️ **Dialect:** Use '-ize' for '{word}' in US English.")
-                        to_highlight.append(word)
-                if re.search(r'\b\w+our\b', linea_clean, re.IGNORECASE):
-                    alertas.append("⚠️ **Dialect:** Use '-or' for US English.")
-            else: # UK
-                if any(x in linea_clean.lower() for x in ["color", "behavior", "center", "honor"]):
-                    alertas.append("⚠️ **Dialect:** US spelling detected. Use UK conventions.")
+            # --- REGLA: Doble Espacio ---
+            if "  " in linea_audit:
+                alertas.append("❌ **Spacing:** Double space detected.")
 
-            # --- API LANGUAGETOOL (Sincronizada con EXCEPTIONS_LIST) ---
+            # --- API LANGUAGETOOL (Sin reglas de dialecto restrictivas) ---
             lang_code = "en-US" if "US" in dialect else "en-GB"
             try:
-                payload = {'text': linea_clean, 'language': lang_code, 'disabledRules': 'MCI_OXFORD_SPELLING_Z_NOT_S,OXFORD_SPELLING_Z_NOT_S'}
+                # Deshabilitamos las reglas que fuerzan Z o S
+                disabled = 'MCI_OXFORD_SPELLING_Z_NOT_S,OXFORD_SPELLING_Z_NOT_S,EN_A_VS_AN,AMERICAN_ENGLISH_SPELLING,BRITISH_ENGLISH_SPELLING'
+                payload = {'text': linea_clean, 'language': lang_code, 'disabledRules': disabled}
                 res = requests.post('https://api.languagetool.org/v2/check', data=payload).json()
+                
                 for m in res.get('matches', []):
+                    # Filtro de seguridad adicional para ignorar sugerencias de ize/ise
+                    if 'Z_NOT_S' in m['rule']['id'] or 'S_NOT_Z' in m['rule']['id']:
+                        continue
+                        
                     bad = linea_clean[m['offset']:m['offset']+m['length']]
-                    # Bloqueo de falsos positivos en API usando nuestra lista maestra
-                    if "US" in dialect and bad.lower() in EXCEPTIONS_LIST: continue
                     if bad.strip():
                         to_highlight.append(bad)
                         alertas.append(f"❌ **{m['rule']['category']['name']}:** {m['message']}")
