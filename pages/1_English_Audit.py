@@ -19,7 +19,6 @@ st.markdown("""
         background-color: #fff3cd; font-weight: bold; color: #d9534f;
         text-decoration: underline; padding: 0 2px;
     }
-    /* Estilo para el Recuadro Azul de Show Details */
     .db-info-box {
         background-color: #e3f2fd;
         border-left: 5px solid #2196f3;
@@ -62,6 +61,14 @@ if texto_input:
     st.markdown(f"**Line Count:** {len(lineas_reales)} / 2500")
     st.write("---")
 
+# LISTA MAESTRA DE EXCEPCIONES (Raíces léxicas fijas)
+EXCEPTIONS_LIST = [
+    "advise", "apprise", "arise", "chastise", "comprise", "compromise", 
+    "demise", "despise", "devise", "disguise", "exercise", "exorcise", 
+    "improvise", "incise", "merchandise", "premise", "revise", 
+    "supervise", "surmise", "surprise", "televise", "expertise", "promise"
+]
+
 if st.button("🚀 Run English Audit"):
     if not texto_input.strip():
         st.warning("Please paste some text first.")
@@ -75,12 +82,10 @@ if st.button("🚀 Run English Audit"):
             progress_bar.progress(i / len(lineas))
             status_text.text(f"Auditing line {i}...")
             
-            # --- MANEJO DE COMANDOS ---
             linea_temp = re.sub(rf"(?i)(?<=[a-zA-Záéíóúüñ])(hide details|show details)", r" \1", linea)
             is_show = "show details" in linea_temp.lower()
             is_hide = "hide details" in linea_temp.lower()
             
-            # Mostrar cuadro azul si hay "Show details"
             if is_show:
                 st.markdown(f"<div class='db-info-box'>Line {i} ℹ️ <b>'Show details' detected:</b> Review for potentially hidden text.</div>", unsafe_allow_html=True)
 
@@ -92,46 +97,42 @@ if st.button("🚀 Run English Audit"):
 
             if not linea_clean and not (is_show or is_hide): continue
 
-            # --- REGLA: HARD RETURNS (Excluyendo Títulos y Comandos) ---
+            # --- REGLA: HARD RETURNS ---
             is_title = re.match(r'^\d+(\.\d+)*', linea_clean) or len(linea_clean.split()) < 5
-            
             if not is_title and not (is_show or is_hide):
                 if not linea_clean.endswith(('.', ':', '?', '!', '"', '”', '…')):
-                    alertas.append("⚠️ **Hard Return:** Line ends without punctuation (possible cut).")
+                    alertas.append("⚠️ **Hard Return:** Line ends without punctuation.")
                     if linea_clean.split():
-                        last_word = linea_clean.split()[-1].strip('.,!?:;')
-                        to_highlight.append(last_word)
+                        to_highlight.append(linea_clean.split()[-1].strip('.,!?:;'))
 
             # --- REGLA: Símbolos de Sublime ---
             sublime_tags = ['{{', '%%', '??', '$$', '<<', '##', '!!', '[[', '@@', '&&', '<br/>', '**']
             for tag in sublime_tags:
-                if tag in linea:
-                    double_tag = tag + tag[0] if len(tag) == 2 else tag
-                    if not linea.startswith(tag) or (len(tag) == 2 and linea.startswith(double_tag)):
-                        alertas.append(f"⚠️ **Format:** Symbol '{tag}' must be at the START.")
+                if tag in linea and not (linea.startswith(tag) or (len(tag) == 2 and linea.startswith(tag + tag[0]))):
+                    alertas.append(f"⚠️ **Format:** Symbol '{tag}' must be at the START.")
 
-            # --- REGLA: Doble Espacio ---
-            if "  " in linea_audit:
-                alertas.append("❌ **Spacing:** Double space detected.")
-
-            # --- REGLA 1: Dialecto ---
+            # --- REGLA: Dialecto US (Excepciones Aplicadas) ---
             if "US" in dialect:
-                ise_matches = re.findall(r'\b\w+ise\b', linea_clean, re.IGNORECASE)
-                for word in ise_matches:
-                    if word.lower() not in ["revise", "supervise", "exercise", "surprise", "expertise", "promise", "advise"]:
-                        alertas.append(f"⚠️ **Dialect:** Use '-ize' for US English.")
+                ise_words = re.findall(r'\b\w+ise\b', linea_clean, re.IGNORECASE)
+                for word in ise_words:
+                    if word.lower() not in EXCEPTIONS_LIST:
+                        alertas.append(f"⚠️ **Dialect:** Use '-ize' for '{word}' in US English.")
                         to_highlight.append(word)
                 if re.search(r'\b\w+our\b', linea_clean, re.IGNORECASE):
                     alertas.append("⚠️ **Dialect:** Use '-or' for US English.")
+            else: # UK
+                if any(x in linea_clean.lower() for x in ["color", "behavior", "center", "honor"]):
+                    alertas.append("⚠️ **Dialect:** US spelling detected. Use UK conventions.")
 
-            # --- API LANGUAGETOOL ---
+            # --- API LANGUAGETOOL (Sincronizada con EXCEPTIONS_LIST) ---
             lang_code = "en-US" if "US" in dialect else "en-GB"
             try:
                 payload = {'text': linea_clean, 'language': lang_code, 'disabledRules': 'MCI_OXFORD_SPELLING_Z_NOT_S,OXFORD_SPELLING_Z_NOT_S'}
                 res = requests.post('https://api.languagetool.org/v2/check', data=payload).json()
                 for m in res.get('matches', []):
                     bad = linea_clean[m['offset']:m['offset']+m['length']]
-                    if "US" in dialect and bad.lower() in ["revise", "supervise", "exercise", "surprise"]: continue
+                    # Bloqueo de falsos positivos en API usando nuestra lista maestra
+                    if "US" in dialect and bad.lower() in EXCEPTIONS_LIST: continue
                     if bad.strip():
                         to_highlight.append(bad)
                         alertas.append(f"❌ **{m['rule']['category']['name']}:** {m['message']}")
