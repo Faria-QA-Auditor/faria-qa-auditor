@@ -70,22 +70,47 @@ if st.button("🚀 Run Turkish Audit"):
             progress_bar.progress(i / len(lineas))
             status_text.text(f"Auditing line {i} of {len(lineas)}...")
 
+            # --- MANEJO DE COMANDOS Y ESPACIADO ---
+            linea_temp = re.sub(rf"(?i)(?<=[a-zA-Záéíóúüñ])(hide details|show details)", r" \1", linea)
+            is_show = "show details" in linea_temp.lower()
+            is_hide = "hide details" in linea_temp.lower()
+
             alertas = []
             to_highlight = []
             
-            # --- MANEJO DE SHOW/HIDE DETAILS ---
-            is_show = "show details" in linea.lower()
-            is_hide = "hide details" in linea.lower()
-            
-            # Línea para auditar (quitamos símbolos y comandos)
-            linea_audit = re.sub(r'^(\{\{|%%|\?\?|\$\$|<<|##|!!|\[\[|@@|&&|\*\*|<br/>)', '', linea)
+            # Limpiar símbolos para auditoría de contenido
+            linea_audit = re.sub(r'^(\{\{|%%|\?\?|\$\$|<<|##|!!|\[\[|@@|&&|\*\*|<br/>)', '', linea_temp)
             linea_clean = re.sub(rf"(?i)show details|hide details", "", linea_audit).strip()
 
             if is_show:
                 st.markdown(f"<div class='db-info-box'>Line {i} ℹ️ <b>'Show details' detected.</b></div>", unsafe_allow_html=True)
 
-            # --- VALIDACIÓN MANUAL DE ALFABETO (PARA FORZAR Ö, İ, Ş, Ç, Ğ, Ü) ---
-            # Diccionario de palabras que sabemos que se escriben mal frecuentemente
+            if not linea_clean and not (is_show or is_hide): continue
+
+            # --- REGLA: HARD RETURNS (Líneas cortadas) ---
+            # Ignorar si es un título (numérico) o muy corta
+            is_title = re.match(r'^\d+(\.\d+)*', linea_clean) or len(linea_clean.split()) < 5
+            
+            if not is_title and not (is_show or is_hide):
+                # Validar puntuación final (incluye signos turcos si aplica)
+                if not linea_clean.endswith(('.', ':', '?', '!', '"', '”', '»', '…')):
+                    alertas.append("⚠️ **Hard Return:** Satır yarım kalmış gibi görünüyor (noktalama eksik).")
+                    if linea_clean.split():
+                        to_highlight.append(linea_clean.split()[-1].strip('.,!?:;'))
+
+            # --- REGLA: Símbolos de Sublime ---
+            sublime_tags = ['{{', '%%', '??', '$$', '<<', '##', '!!', '[[', '@@', '&&', '<br/>', '**']
+            for tag in sublime_tags:
+                if tag in linea:
+                    triple_check = tag + tag[0] if len(tag) == 2 else tag
+                    if not linea.startswith(tag) or (len(tag) == 2 and linea.startswith(triple_check)):
+                        alertas.append(f"⚠️ **Format:** Symbol '{tag}' must be at the START.")
+
+            # --- REGLA: Doble Espacio ---
+            if "  " in linea_audit:
+                alertas.append("❌ **Spacing:** Double space detected.")
+
+            # --- VALIDACIÓN MANUAL DE ALFABETO ---
             manual_checks = {
                 "askim": "aşkım", "farkli": "farklı", "ülkelere": "Ülkelere", 
                 "sabir": "sabır", "gorgü": "görgü", "ogrenci": "öğrenci",
@@ -95,28 +120,25 @@ if st.button("🚀 Run Turkish Audit"):
             palabras = linea_clean.split()
             for p in palabras:
                 p_clean = re.sub(r'[^\w]', '', p).lower()
-                # 1. Chequeo de palabras específicas
                 if p_clean in manual_checks:
                     alertas.append(f"❌ **Alphabet:** Found '{p}'. Please use: '{manual_checks[p_clean]}'.")
                     to_highlight.append(p)
                 
-                # 2. Bloqueo de Q, W, X
                 if any(c in p_clean for c in "qwx"):
                     alertas.append(f"❌ **Non-Turkish Char:** Word '{p}' contains Q, W, or X.")
                     to_highlight.append(p)
 
             # --- API LANGUAGETOOL ---
-            if linea_clean:
-                try:
-                    res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea_clean, 'language': 'tr'}).json()
-                    for m in res.get('matches', []):
-                        bad = linea_clean[m['offset']:m['offset']+m['length']]
-                        if len(bad.strip()) <= 1 or bad.lower() in ["lise"]: continue
-                        
-                        sug = f" (Try: **{m['replacements'][0]['value']}**)" if m['replacements'] else ""
-                        to_highlight.append(bad)
-                        alertas.append(f"❌ **Grammar/Spelling:** '{bad}'.{sug}")
-                except: pass
+            try:
+                res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea_clean, 'language': 'tr'}).json()
+                for m in res.get('matches', []):
+                    bad = linea_clean[m['offset']:m['offset']+m['length']]
+                    if len(bad.strip()) <= 1 or bad.lower() in ["lise"]: continue
+                    
+                    sug = f" (Try: **{m['replacements'][0]['value']}**)" if m['replacements'] else ""
+                    to_highlight.append(bad)
+                    alertas.append(f"❌ **{m['rule']['category']['name']}:** {m['message']}{sug}")
+            except: pass
 
             # --- RENDER ---
             if alertas:
@@ -124,7 +146,7 @@ if st.button("🚀 Run Turkish Audit"):
                     st.markdown(f"<div>{highlight_errors(linea, to_highlight)}</div>", unsafe_allow_html=True)
                     st.markdown(f"<div class='translation-box'><b>English Context:</b> {translate_to_english(linea_clean)}</div>", unsafe_allow_html=True)
                     for a in alertas: st.write(a)
-            else:
+            elif not is_show:
                 st.success(f"Line {i} ✅ Perfect")
 
         status_text.text("Audit complete!")
