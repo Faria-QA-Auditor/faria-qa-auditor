@@ -76,24 +76,41 @@ if st.button("🚀 Run French Audit"):
             progress_bar.progress(i / len(lineas))
             status_text.text(f"Auditing line {i} of {len(lineas)}...")
 
-            linea_lower = linea.lower().strip()
-            if "hide details" in linea_lower: continue
-            if "show details" in linea_lower:
+            # --- MANEJO DE COMANDOS Y ESPACIADO ---
+            linea_temp = re.sub(rf"(?i)(?<=[a-zA-Záéíóúüñ])(hide details|show details)", r" \1", linea)
+            is_show = "show details" in linea_temp.lower()
+            is_hide = "hide details" in linea_temp.lower()
+
+            if is_show:
                 st.markdown(f"<div class='db-info-box'>Line {i} ℹ️ <b>'Show details' detected:</b> Verify database.</div>", unsafe_allow_html=True)
-                continue
 
             alertas = []
             to_highlight = []
-            linea_audit = linea
+            
+            # Limpiar símbolos para auditoría
+            linea_audit = re.sub(r'^(\{\{|%%|\?\?|\$\$|<<|##|!!|\[\[|@@|&&|\*\*|<br/>)', '', linea_temp)
+            linea_clean = re.sub(rf"(?i)show details|hide details", "", linea_audit).strip()
 
-            # --- REGLA: Símbolos de Sublime (Pares al inicio) ---
+            if not linea_clean and not (is_show or is_hide): continue
+
+            # --- REGLA: HARD RETURNS (Líneas cortadas) ---
+            # Ignorar si es un título (numérico) o muy corta
+            is_title = re.match(r'^\d+(\.\d+)*', linea_clean) or len(linea_clean.split()) < 5
+            
+            if not is_title and not (is_show or is_hide):
+                # Validar puntuación final francesa
+                if not linea_clean.endswith(('.', ':', '?', '!', '"', '»', '”', '…')):
+                    alertas.append("⚠️ **Hard Return:** La ligne semble coupée (pas de ponctuation finale).")
+                    if linea_clean.split():
+                        to_highlight.append(linea_clean.split()[-1].strip('.,!?:;'))
+
+            # --- REGLA: Símbolos de Sublime ---
             sublime_tags = ['{{', '%%', '??', '$$', '<<', '##', '!!', '[[', '@@', '&&', '<br/>', '**']
             for tag in sublime_tags:
                 if tag in linea:
                     triple_check = tag + tag[0] if len(tag) == 2 else tag
                     if not linea.startswith(tag) or (len(tag) == 2 and linea.startswith(triple_check)):
-                        alertas.append(f"⚠️ **Format:** Symbol '{tag}' must be a PAIR at the START of the line.")
-                    linea_audit = linea_audit.replace(tag, "")
+                        alertas.append(f"⚠️ **Format:** Symbol '{tag}' must be at the START.")
 
             # --- REGLA: Doble Espacio ---
             if "  " in linea_audit:
@@ -101,15 +118,14 @@ if st.button("🚀 Run French Audit"):
 
             # --- API LANGUAGETOOL ---
             try:
-                res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea_audit.strip(), 'language': 'fr'}).json()
+                res = requests.post('https://api.languagetool.org/v2/check', data={'text': linea_clean, 'language': 'fr'}).json()
                 for m in res.get('matches', []):
                     r_id = m.get('rule', {}).get('id', '')
                     
-                    # Eliminamos UPPERCASE_SENTENCE_START de esta lista para que SÍ marque la mayúscula faltante
                     if any(x in r_id for x in ["FRENCH_WHITESPACE", "FR_PUNCTUATION", "MORFOLOGIK_RULE_FR_FR"]):
                         continue
 
-                    bad = unicodedata.normalize('NFC', linea_audit[m['offset']:m['offset']+m['length']])
+                    bad = unicodedata.normalize('NFC', linea_clean[m['offset']:m['offset']+m['length']])
                     if bad.lower() in ["show", "details", "hide"] or len(bad.strip()) <= 1:
                         continue
                     
@@ -129,7 +145,7 @@ if st.button("🚀 Run French Audit"):
                     st.markdown(f"<div>{highlight_errors(linea, to_highlight)}</div>", unsafe_allow_html=True)
                     st.markdown(f"<div class='translation-box'><b>English Context:</b> {translate_to_english(linea)}</div>", unsafe_allow_html=True)
                     for a in alertas: st.write(a)
-            else:
+            elif not is_show:
                 st.success(f"Line {i} ✅ Perfect")
         
         status_text.text("Audit complete!")
